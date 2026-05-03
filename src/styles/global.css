@@ -1,0 +1,62 @@
+:root {
+  --bg-primary: #080a0e;
+  --bg-panel: #0d1117;
+  --bg-border: #1a2332;
+  --accent-primary: #00d4ff;
+  --accent-secondary: #ff6b00;
+  --accent-green: #00ff88;
+  --accent-red: #ff2244;
+  --text-primary: #e8edf5;
+  --text-secondary: #7a8fa6;
+  --text-dim: #3d5068;
+  --panel-glow: 0 0 20px rgba(0, 212, 255, 0.08);
+  --border-glow: 0 0 8px rgba(0, 212, 255, 0.15);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-primary);
+  font-family: "Rajdhani", sans-serif;
+  color: var(--text-primary);
+}
+
+canvas {
+  display: block;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-panel);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-border);
+  border-radius: 2px;
+}
+
+/* Scanline overlay effect */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
