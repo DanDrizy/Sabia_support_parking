@@ -9,6 +9,8 @@ export const MAIN_CAMERA_START = { x: 0, y: 1.75, z: 5 };
 const OCCUPANCY_UPDATE_INTERVAL_MS = 100;
 const BARRIER_ROTATION_SPEED = 7;
 const BARRIER_CLOSED_OFFSET = - Math.PI / 2;
+const SUB_CAMERA_EXPOSURE = 2.2;
+const SUB_CAMERA_FILL_INTENSITY = 2.8;
 type EntryCameraKey = "in1" | "in2";
 type PlateMemory = PlateDetection & { lastSeenMs: number };
 
@@ -214,6 +216,13 @@ export function useSceneRenderer({
     const fill = new THREE.DirectionalLight(0x4466aa, 0.3);
     fill.position.set(-30, 20, -50);
     scene.add(fill);
+    const subCameraFill = new THREE.HemisphereLight(
+      0xffffff,
+      0x8899aa,
+      SUB_CAMERA_FILL_INTENSITY,
+    );
+    subCameraFill.visible = false;
+    scene.add(subCameraFill);
 
     scene.add(assets.environment);
     assets.cars.forEach((car) => scene.add(car));
@@ -290,6 +299,8 @@ export function useSceneRenderer({
       cam: THREE.Camera | null,
       domEl: HTMLDivElement | null,
       canvasEl: HTMLCanvasElement,
+      exposure = 1.0,
+      useSubCameraFill = false,
     ) {
       if (!cam || !domEl) return;
 
@@ -314,7 +325,12 @@ export function useSceneRenderer({
         pcam.updateProjectionMatrix();
       }
 
+      const previousExposure = renderer.toneMappingExposure;
+      renderer.toneMappingExposure = exposure;
+      subCameraFill.visible = useSubCameraFill;
       renderer.render(scene, cam);
+      subCameraFill.visible = false;
+      renderer.toneMappingExposure = previousExposure;
     }
 
     // ── Render loop ───────────────────────────────────────────────────────────
@@ -396,10 +412,34 @@ export function useSceneRenderer({
 
       // ── Render all viewports — resolved cams are NEVER null ───────────────
       renderViewport(getMainCamera(), mainViewRef.current, canvas);
-      renderViewport(resolvedIn1, subViewRefs[0].current, canvas);
-      renderViewport(resolvedIn2, subViewRefs[1].current, canvas);
-      renderViewport(resolvedOut1, subViewRefs[2].current, canvas);
-      renderViewport(resolvedOut2, subViewRefs[3].current, canvas);
+      renderViewport(
+        resolvedIn1,
+        subViewRefs[0].current,
+        canvas,
+        SUB_CAMERA_EXPOSURE,
+        true,
+      );
+      renderViewport(
+        resolvedIn2,
+        subViewRefs[1].current,
+        canvas,
+        SUB_CAMERA_EXPOSURE,
+        true,
+      );
+      renderViewport(
+        resolvedOut1,
+        subViewRefs[2].current,
+        canvas,
+        SUB_CAMERA_EXPOSURE,
+        true,
+      );
+      renderViewport(
+        resolvedOut2,
+        subViewRefs[3].current,
+        canvas,
+        SUB_CAMERA_EXPOSURE,
+        true,
+      );
     }
 
     animate();
