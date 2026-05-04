@@ -34,7 +34,6 @@ export function usePlayerController({
     basePitchRef.current = euler.x;
     yawRef.current = 0;
     pitchRef.current = 0;
-
     if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
       baseFovRef.current = (camera as THREE.PerspectiveCamera).fov;
     }
@@ -43,7 +42,6 @@ export function usePlayerController({
   useEffect(() => {
     if (!enabled || !canvasEl) return;
 
-    // ── Mouse drag to look ───────────────────────────────────────────────────
     const onMouseDown = (e: MouseEvent) => {
       if (e.button === 0) {
         isDraggingRef.current = true;
@@ -71,8 +69,6 @@ export function usePlayerController({
         ),
       );
     };
-
-    // ── Scroll to zoom ───────────────────────────────────────────────────────
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (!(camera as THREE.PerspectiveCamera).isPerspectiveCamera) return;
@@ -83,11 +79,8 @@ export function usePlayerController({
       );
       pcam.updateProjectionMatrix();
     };
-
-    // ── Keyboard ─────────────────────────────────────────────────────────────
     const onKeyDown = (e: KeyboardEvent) => keysRef.current.add(e.code);
     const onKeyUp = (e: KeyboardEvent) => keysRef.current.delete(e.code);
-
     const onContextMenu = (e: Event) => e.preventDefault();
 
     canvasEl.style.cursor = "grab";
@@ -114,7 +107,6 @@ export function usePlayerController({
   function update(dt: number) {
     if (!enabled || !camera) return;
 
-    // ── Apply look rotation ──────────────────────────────────────────────────
     const yawQ = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
       baseYawRef.current + yawRef.current,
@@ -125,28 +117,20 @@ export function usePlayerController({
     );
     camera.quaternion.copy(yawQ).multiply(pitchQ);
 
-    // ── WASD / Arrow key movement ────────────────────────────────────────────
     const keys = keysRef.current;
-    const forward =
-      keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0;
-    const backward =
-      keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0;
-    const left =
-      keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0;
-    const right =
-      keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0;
+    const forward = keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0;
+    const backward = keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0;
+    const left = keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0;
+    const right = keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0;
     const up = keys.has("Space") ? 1 : 0;
     const down = keys.has("ShiftLeft") || keys.has("ShiftRight") ? 1 : 0;
 
     if (forward || backward || left || right || up || down) {
-      // Build a move vector in camera-local space
       const moveDir = new THREE.Vector3(
         right - left,
         up - down,
         backward - forward,
       ).normalize();
-
-      // Transform by camera yaw only (so strafing/forward stay on XZ plane)
       const yawOnly = new THREE.Quaternion().setFromAxisAngle(
         new THREE.Vector3(0, 1, 0),
         baseYawRef.current + yawRef.current,

@@ -14,6 +14,27 @@ export interface SceneAssets {
   };
   collisionMeshes: THREE.Mesh[];
   hdriTexture: THREE.DataTexture | null;
+  sensorMeshes: SensorMeshData[];
+  
+}
+
+export interface SensorMeshData {
+  index: number; // 1-based (sensor_1 … sensor_7)
+  mesh: THREE.Mesh;
+  worldPosition: THREE.Vector3; // exported position — never changes
+}
+
+export interface PlacedSensor {
+  index: number; // 1-based
+  label: string; // "SENSOR 1"
+}
+
+/** Live occupancy state for one sensor — updated every frame from the render loop */
+export interface SensorOccupancy {
+  sensorIndex: number;
+  occupied: boolean;
+  carIndex: number | null; // 1-based car index if occupied, else null
+  distance: number; // closest car distance in metres
 }
 
 export interface PlayerState {

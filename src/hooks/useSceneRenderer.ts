@@ -1,18 +1,25 @@
 import { useEffect, useRef, useCallback, RefObject } from "react";
 import * as THREE from "three";
-import { SceneAssets } from "../types";
+import { SceneAssets, SensorOccupancy } from "../types";
 import { CarAnimationSequencer } from "../utils/carSequencer";
+import { SensorManager } from "../utils/sensorManager";
 import { usePlayerController } from "./usePlayerController";
+
+export const MAIN_CAMERA_START = { x: 0, y: 1.75, z: 5 };
+
+const OCCUPANCY_UPDATE_INTERVAL_MS = 100;
 
 interface UseSceneRendererOptions {
   assets: SceneAssets | null;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   mainViewRef: RefObject<HTMLDivElement | null>;
   subViewRefs: RefObject<HTMLDivElement | null>[];
+  sensorManagerRef: React.RefObject<SensorManager | null>;
   onCarChange?: (index: number) => void;
   onAllCarsFinished?: () => void;
   onCurrentCarFinished?: () => void;
   onProgressUpdate?: (progress: number, duration: number) => void;
+  onOccupancyUpdate?: (occupancy: SensorOccupancy[]) => void;
   animSpeed?: number;
   playerControlEnabled?: boolean;
 }
@@ -22,10 +29,12 @@ export function useSceneRenderer({
   canvasRef,
   mainViewRef,
   subViewRefs,
+  sensorManagerRef,
   onCarChange,
   onAllCarsFinished,
   onCurrentCarFinished,
   onProgressUpdate,
+  onOccupancyUpdate,
   animSpeed = 1.0,
   playerControlEnabled = false,
 }: UseSceneRendererOptions) {
@@ -36,18 +45,20 @@ export function useSceneRenderer({
   const clockRef = useRef(new THREE.Clock());
 
   const animSpeedRef = useRef(animSpeed);
-  useEffect(() => {
-    animSpeedRef.current = animSpeed;
-  }, [animSpeed]);
+  const playerEnabledRef = useRef(playerControlEnabled);
+  const onOccupancyRef = useRef(onOccupancyUpdate);
 
-  const playerControlEnabledRef = useRef(playerControlEnabled);
-  useEffect(() => {
-    playerControlEnabledRef.current = playerControlEnabled;
-  }, [playerControlEnabled]);
+  useEffect(() => { animSpeedRef.current = animSpeed; }, [animSpeed]);
+  useEffect(() => { playerEnabledRef.current = playerControlEnabled; }, [playerControlEnabled]);
+  useEffect(() => { onOccupancyRef.current = onOccupancyUpdate; }, [onOccupancyUpdate]);
 
   const fallbackCamRef = useRef<THREE.PerspectiveCamera>(
     new THREE.PerspectiveCamera(60, 1, 0.1, 1000),
   );
+
+  const getMainCamera = useCallback((): THREE.Camera => {
+    return assets?.cameras.main ?? fallbackCamRef.current;
+  }, [assets]);
 
   const playerCtrl = usePlayerController({
     camera: assets?.cameras.main ?? fallbackCamRef.current,
@@ -56,18 +67,18 @@ export function useSceneRenderer({
     canvasEl: canvasRef.current,
   });
 
-  const getMainCamera = useCallback((): THREE.Camera => {
-    return assets?.cameras.main ?? fallbackCamRef.current;
-  }, [assets]);
-
   useEffect(() => {
     if (!assets || !canvasRef.current) return;
 
-    console.log(
-      "[useSceneRenderer] cameras loaded:",
-      Object.keys(assets.cameras),
-    );
+    console.log("[useSceneRenderer] cameras:", {
+      main: assets.cameras.main?.name  ?? "MISSING",
+      in1:  assets.cameras.in1?.name   ?? "MISSING",
+      in2:  assets.cameras.in2?.name   ?? "MISSING",
+      out1: assets.cameras.out1?.name  ?? "MISSING",
+      out2: assets.cameras.out2?.name  ?? "MISSING",
+    });
 
+    // ── Renderer ──────────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
       antialias: true,
@@ -81,9 +92,8 @@ export function useSceneRenderer({
     renderer.toneMappingExposure = 1.0;
     rendererRef.current = renderer;
 
+    // ── Scene ─────────────────────────────────────────────────────────────────
     const scene = new THREE.Scene();
-
-    // ── HDRI sky ─────────────────────────────────────────────────────────────
     if (assets.hdriTexture) {
       scene.background = assets.hdriTexture;
       scene.environment = assets.hdriTexture;
@@ -91,12 +101,9 @@ export function useSceneRenderer({
       scene.background = new THREE.Color(0x080a0e);
       scene.fog = new THREE.Fog(0x080a0e, 80, 200);
     }
-
     sceneRef.current = scene;
 
-    const ambient = new THREE.AmbientLight(0x8899bb, 0.4);
-    scene.add(ambient);
-
+    scene.add(new THREE.AmbientLight(0x8899bb, 0.4));
     const sun = new THREE.DirectionalLight(0xfff5e0, 1.5);
     sun.position.set(50, 80, 30);
     sun.castShadow = true;
@@ -113,27 +120,38 @@ export function useSceneRenderer({
     fill.position.set(-30, 20, -50);
     scene.add(fill);
 
+    // Add environment (sensors are already children of environment from loader)
     scene.add(assets.environment);
+
+    // Add cars to scene
     assets.cars.forEach((car) => scene.add(car));
 
-    fallbackCamRef.current.position.set(0, 3, 12);
-    fallbackCamRef.current.lookAt(0, 1, 0);
+    // Force full world matrix update now that everything is in the scene
+    scene.updateWorldMatrix(true, true);
 
+    // Fallback camera position
+    fallbackCamRef.current.position.set(
+      MAIN_CAMERA_START.x,
+      MAIN_CAMERA_START.y,
+      MAIN_CAMERA_START.z,
+    );
+
+    // ── Car sequencer ─────────────────────────────────────────────────────────
     const sequencer = new CarAnimationSequencer(
       assets.carMixers,
       assets.carClips,
       () => onAllCarsFinished?.(),
       (i) => onCarChange?.(i),
       () => onCurrentCarFinished?.(),
-      (progress, duration) => onProgressUpdate?.(progress, duration),
+      (p, d) => onProgressUpdate?.(p, d),
     );
     sequencer.start();
     sequencerRef.current = sequencer;
 
     const clock = clockRef.current;
     clock.start();
-
     let lastCarIndex = 0;
+    let lastOccupancyPushMs = 0;
 
     function renderViewport(
       cam: THREE.Camera | null,
@@ -164,6 +182,7 @@ export function useSceneRenderer({
       const rawDt = Math.min(clock.getDelta(), 0.05);
       const dt = rawDt * animSpeedRef.current;
 
+      // ── Update animations ────────────────────────────────────────────────
       sequencer.update(dt);
 
       const ci = sequencer.getCurrentCarIndex();
@@ -172,17 +191,33 @@ export function useSceneRenderer({
         onCarChange?.(ci);
       }
 
-      // Only move camera if player control is active
-      if (playerControlEnabledRef.current) {
-        playerCtrl.update(rawDt);
+      if (playerEnabledRef.current) playerCtrl.update(rawDt);
+
+      // ── Update all car world matrices BEFORE sensor tick ─────────────────
+      // This is critical — animation changes positions, we must resolve matrices
+      // before raycasting or the sensor will test against stale positions.
+      assets!.cars.forEach((car) => car.updateWorldMatrix(true, true));
+
+      // ── Sensor tick ──────────────────────────────────────────────────────
+      const mgr = sensorManagerRef.current;
+      if (mgr) {
+        const occupancy = mgr.tick(assets!.cars);
+        const nowMs = performance.now();
+        if (
+          nowMs - lastOccupancyPushMs > OCCUPANCY_UPDATE_INTERVAL_MS &&
+          onOccupancyRef.current
+        ) {
+          onOccupancyRef.current(occupancy);
+          lastOccupancyPushMs = nowMs;
+        }
       }
 
+      // ── Resize + render ──────────────────────────────────────────────────
       const canvas = canvasRef.current!;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
-      if (canvas.width !== w || canvas.height !== h) {
+      if (canvas.width !== w || canvas.height !== h)
         renderer.setSize(w, h, false);
-      }
 
       renderer.setClearColor(0x080a0e, 1);
       renderViewport(getMainCamera(), mainViewRef.current, canvas);
@@ -193,9 +228,9 @@ export function useSceneRenderer({
         assets!.cameras.out1,
         assets!.cameras.out2,
       ];
-      subViewRefs.forEach((ref, i) => {
-        renderViewport(subCams[i], ref.current, canvas);
-      });
+      subViewRefs.forEach((ref, i) =>
+        renderViewport(subCams[i], ref.current, canvas),
+      );
     }
 
     animate();
@@ -209,13 +244,13 @@ export function useSceneRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assets]);
 
-  const skipCurrent = () => sequencerRef.current?.skipCurrent();
-  const togglePause = () => sequencerRef.current?.togglePause();
+  const skipCurrent   = () => sequencerRef.current?.skipCurrent();
+  const togglePause   = () => sequencerRef.current?.togglePause();
   const fasterCurrent = () => sequencerRef.current?.fasterCurrent();
   const repeatCurrent = () => sequencerRef.current?.repeatCurrent();
-  const previousCar = () => sequencerRef.current?.previousCar();
-  const nextCar = () => sequencerRef.current?.nextCar();
-  const seekTo = (time: number) => sequencerRef.current?.seekTo(time);
+  const previousCar   = () => sequencerRef.current?.previousCar();
+  const nextCar       = () => sequencerRef.current?.nextCar();
+  const seekTo        = (time: number) => sequencerRef.current?.seekTo(time);
 
   return {
     sequencerRef,

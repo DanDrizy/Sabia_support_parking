@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { SceneAssets } from "../types";
+import { SceneAssets, SensorMeshData } from "../types";
 
 const loader = new GLTFLoader();
 
@@ -15,7 +15,6 @@ async function loadGLB(
         `Make sure the file exists in your project's public/models/ folder.`,
     );
   }
-
   const contentType = res.headers.get("content-type") ?? "";
   if (contentType.includes("text/html")) {
     throw new Error(
@@ -23,9 +22,7 @@ async function loadGLB(
         `The file is missing from public/models/ — copy it there and restart the dev server.`,
     );
   }
-
   const buffer = await res.arrayBuffer();
-
   return new Promise((resolve, reject) => {
     loader.parse(buffer, "", resolve, (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
@@ -36,22 +33,19 @@ async function loadGLB(
 
 async function loadHDRI(path: string): Promise<THREE.DataTexture> {
   return new Promise((resolve, reject) => {
-    const rgbeLoader = new RGBELoader();
-    rgbeLoader.load(
+    new RGBELoader().load(
       path,
       (texture) => {
         texture.mapping = THREE.EquirectangularReflectionMapping;
         resolve(texture);
       },
       undefined,
-      (err) => {
+      (err) =>
         reject(
           new Error(
-            `RGBELoader failed to load "${path}": ${err instanceof Error ? err.message : String(err)}\n` +
-              `Make sure sky.hdr exists in your project's public/ folder.`,
+            `RGBELoader failed: ${err instanceof Error ? err.message : String(err)}`,
           ),
-        );
-      },
+        ),
     );
   });
 }
@@ -96,18 +90,16 @@ export async function loadAllAssets(
   onProgress?: (msg: string, pct: number) => void,
 ): Promise<SceneAssets> {
   const CAR_COUNT = 7;
+  const SENSOR_COUNT = 7;
   const report = (msg: string, pct: number) => onProgress?.(msg, pct);
 
-  // ── HDRI sky ───────────────────────────────────────────────────────────────
+  // ── HDRI ──────────────────────────────────────────────────────────────────
   report("Loading sky…", 3);
   let hdriTexture: THREE.DataTexture | null = null;
   try {
     hdriTexture = await loadHDRI("/sky.hdr");
   } catch (err) {
-    console.warn(
-      "[SceneLoader] sky.hdr failed to load — falling back to solid colour.",
-      err,
-    );
+    console.warn("[SceneLoader] sky.hdr not found — using solid colour.", err);
   }
 
   // ── Environment ────────────────────────────────────────────────────────────
@@ -116,7 +108,6 @@ export async function loadAllAssets(
   const environment = envGLTF.scene;
   environment.name = "environment";
   debugNames(environment, "env.glb");
-
   environment.traverse((obj) => {
     if ((obj as THREE.Mesh).isMesh) {
       const mesh = obj as THREE.Mesh;
@@ -124,7 +115,6 @@ export async function loadAllAssets(
       mesh.receiveShadow = true;
     }
   });
-
   const collisionMeshes = collectMeshes(environment);
   console.log(`[SceneLoader] Collision meshes: ${collisionMeshes.length}`);
 
@@ -133,7 +123,6 @@ export async function loadAllAssets(
   const camGLTF = await loadGLB("/models/camera.glb");
   const camRoot = camGLTF.scene;
   debugNames(camRoot, "camera.glb");
-
   const gltfCams = camGLTF.cameras;
   console.log(
     "[SceneLoader] gltf.cameras:",
@@ -149,23 +138,95 @@ export async function loadAllAssets(
   };
 
   console.log("[SceneLoader] Resolved cameras:", {
-    main: cameras.main?.name ?? "MISSING",
-    in1: cameras.in1?.name ?? "MISSING",
-    in2: cameras.in2?.name ?? "MISSING",
-    out1: cameras.out1?.name ?? "MISSING",
-    out2: cameras.out2?.name ?? "MISSING",
-  });
-
-  (["main", "in1", "in2", "out1", "out2"] as const).forEach((key) => {
-    if (!cameras[key]) {
-      console.warn(
-        `[SceneLoader] Camera "${key}" is MISSING. ` +
-          `Available cameras: ${gltfCams.map((c) => c.name).join(", ")}`,
-      );
-    }
+    main: cameras.main?.name ?? "❌ MISSING",
+    in1: cameras.in1?.name ?? "❌ MISSING",
+    in2: cameras.in2?.name ?? "❌ MISSING",
+    out1: cameras.out1?.name ?? "❌ MISSING",
+    out2: cameras.out2?.name ?? "❌ MISSING",
   });
 
   camRoot.updateWorldMatrix(true, true);
+
+  // ── Sensors ────────────────────────────────────────────────────────────────
+  // IMPORTANT: sensor meshes must be added to environment BEFORE their
+  // world positions are read, so the scene graph is fully resolved.
+  report("Loading sensors…", 22);
+  const sensorMeshes: SensorMeshData[] = [];
+
+  try {
+    const sensorGLTF = await loadGLB("/models/sensors.glb");
+    const sensorRoot = sensorGLTF.scene;
+    debugNames(sensorRoot, "sensors.glb");
+
+    // Add to environment first so world matrices are correct
+    environment.add(sensorRoot);
+    // Force full matrix update on the whole tree
+    environment.updateWorldMatrix(true, true);
+
+    for (let i = 1; i <= SENSOR_COUNT; i++) {
+      let found: THREE.Mesh | null = null;
+
+      // Exact match
+      sensorRoot.traverse((obj) => {
+        if (found) return;
+        if (
+          (obj as THREE.Mesh).isMesh &&
+          obj.name.toLowerCase() === `sensor_${i}`
+        ) {
+          found = obj as THREE.Mesh;
+        }
+      });
+      // Partial match fallback
+      if (!found) {
+        sensorRoot.traverse((obj) => {
+          if (found) return;
+          if (
+            (obj as THREE.Mesh).isMesh &&
+            obj.name.toLowerCase().includes(`sensor_${i}`)
+          ) {
+            found = obj as THREE.Mesh;
+          }
+        });
+      }
+
+      if (found) {
+        const mesh = found as THREE.Mesh;
+
+        // Ensure geometry bounding volumes are computed
+        if (mesh.geometry) {
+          mesh.geometry.computeBoundingBox();
+          mesh.geometry.computeBoundingSphere();
+        }
+
+        // Read world position NOW — mesh is in the scene graph
+        mesh.updateWorldMatrix(true, false);
+        const worldPos = new THREE.Vector3();
+        mesh.getWorldPosition(worldPos);
+
+        // Start hidden until user places
+        mesh.visible = false;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        sensorMeshes.push({ index: i, mesh, worldPosition: worldPos.clone() });
+        console.log(
+          `[SceneLoader] sensor_${i} found "${mesh.name}" at world pos`,
+          worldPos.toArray().map((v) => v.toFixed(2)),
+        );
+      } else {
+        console.warn(`[SceneLoader] sensor_${i} NOT FOUND in sensors.glb`);
+      }
+    }
+
+    console.log(
+      `[SceneLoader] ${sensorMeshes.length}/${SENSOR_COUNT} sensors loaded`,
+    );
+  } catch (err) {
+    console.warn(
+      "[SceneLoader] sensors.glb failed — sensor feature disabled.",
+      err,
+    );
+  }
 
   // ── Cars ───────────────────────────────────────────────────────────────────
   const cars: THREE.Group[] = [];
@@ -173,24 +234,26 @@ export async function loadAllAssets(
   const carClips: THREE.AnimationClip[][] = [];
 
   for (let i = 1; i <= CAR_COUNT; i++) {
-    report(`Loading car ${i} of ${CAR_COUNT}…`, 22 + (i / CAR_COUNT) * 70);
+    report(`Loading car ${i} of ${CAR_COUNT}…`, 25 + (i / CAR_COUNT) * 68);
     const gltf = await loadGLB(`/models/car_${i}.glb`);
     const group = gltf.scene;
     group.name = `car_${i}`;
-
     group.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         const mesh = obj as THREE.Mesh;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        // Pre-compute bounding volumes for raycasting
+        if (mesh.geometry) {
+          mesh.geometry.computeBoundingBox();
+          mesh.geometry.computeBoundingSphere();
+        }
       }
     });
-
     console.log(
       `[SceneLoader] car_${i}.glb — animations:`,
       gltf.animations.map((a) => a.name).join(", ") || "none",
     );
-
     const mixer = new THREE.AnimationMixer(group);
     cars.push(group);
     carMixers.push(mixer);
@@ -207,5 +270,6 @@ export async function loadAllAssets(
     cameras,
     collisionMeshes,
     hdriTexture,
+    sensorMeshes,
   };
 }

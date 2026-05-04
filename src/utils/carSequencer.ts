@@ -115,10 +115,8 @@ export class CarAnimationSequencer {
     return this.finishedSet.has(this.currentIndex);
   }
 
-  /** Jump to a specific car by index (0-based). Replays from beginning. */
   goToCar(index: number) {
     if (index < 0 || index >= this.mixers.length) return;
-    // Stop current
     this.mixers[this.currentIndex]?.stopAllAction();
     this.currentIndex = index;
     this.finishedSet.delete(index);
@@ -130,19 +128,16 @@ export class CarAnimationSequencer {
   previousCar() {
     this.goToCar(this.currentIndex - 1);
   }
-
   nextCar() {
     this.goToCar(this.currentIndex + 1);
   }
 
-  /** Seek the current car's animation to a specific time (seconds). */
   seekTo(time: number) {
     const i = this.currentIndex;
     const mixer = this.mixers[i];
     const clips = this.clips[i];
     if (!mixer || !clips || clips.length === 0) return;
 
-    // If finished, reactivate actions first
     if (this.finishedSet.has(i)) {
       this.finishedSet.delete(i);
       mixer.stopAllAction();
@@ -158,19 +153,16 @@ export class CarAnimationSequencer {
     clips.forEach((clip) => {
       const action = mixer.clipAction(clip);
       action.time = Math.max(0, Math.min(time, clip.duration));
-      // Force mixer to apply the pose at the new time
       mixer.update(0);
       action.paused = this.paused;
     });
   }
 
-  /** Returns [currentTime, totalDuration] for the active car. */
   getProgress(): [number, number] {
     const i = this.currentIndex;
     const clips = this.clips[i];
     const mixer = this.mixers[i];
     if (!clips || clips.length === 0 || !mixer) return [0, 0];
-
     const clip = clips[0];
     const action = mixer.clipAction(clip);
     return [action.time, clip.duration];
@@ -205,8 +197,6 @@ export class CarAnimationSequencer {
     for (let i = 0; i <= this.currentIndex && i < this.mixers.length; i++) {
       this.mixers[i].update(boostedDt);
     }
-
-    // Report progress for the timeline
     const [time, duration] = this.getProgress();
     this.onProgressUpdate?.(time, duration);
   }
