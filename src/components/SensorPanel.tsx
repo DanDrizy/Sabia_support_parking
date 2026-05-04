@@ -422,6 +422,12 @@ export function SensorPanel({
             const o = occupancyMap.get(s.index);
             const occupied = o?.occupied ?? false;
             const carLabel = o?.carIndex != null ? `CAR_${o.carIndex}` : null;
+            const plateLabel = o?.plateNumber ?? carLabel;
+            const cameraLabel = o?.plateCamera
+              ? o.plateCamera === "in1"
+                ? "CAM / IN-1"
+                : "CAM / IN-2"
+              : null;
             const distLabel =
               o && o.distance >= 0
                 ? `${(o.distance * 100).toFixed(1)}cm`
@@ -522,7 +528,7 @@ export function SensorPanel({
                 </div>
 
                 {/* Bottom row: detected car info — only shown when occupied */}
-                {occupied && carLabel && (
+                {occupied && plateLabel && (
                   <div
                     style={{
                       display: "flex",
@@ -582,8 +588,20 @@ export function SensorPanel({
                           letterSpacing: "0.08em",
                         }}
                       >
-                        {carLabel}
+                        {plateLabel}
                       </span>
+                      {cameraLabel && (
+                        <span
+                          style={{
+                            fontFamily: "'Share Tech Mono', monospace",
+                            fontSize: "0.42rem",
+                            color: "#7a4a4a",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          {cameraLabel}
+                        </span>
+                      )}
                     </div>
                     {distLabel && (
                       <span

@@ -8,6 +8,7 @@ import {
 } from "../types";
 
 const loader = new GLTFLoader();
+const PLATE_PATTERN = /\bRAB\d{3}\b/i;
 
 async function loadGLB(
   path: string,
@@ -126,6 +127,33 @@ function pickBarrierPivot(root: THREE.Group): THREE.Object3D {
   }
 
   return largestMesh ?? root;
+}
+
+function readPlateFromModel(root: THREE.Object3D, fallback: string): string {
+  let plate: string | null = null;
+  root.traverse((obj) => {
+    if (plate) return;
+    const match = obj.name.match(PLATE_PATTERN);
+    if (match) plate = match[0].toUpperCase();
+  });
+  return plate ?? fallback;
+}
+
+function findPlateObject(root: THREE.Object3D, plate: string): THREE.Object3D | null {
+  let fallback: THREE.Object3D | null = null;
+  let found: THREE.Object3D | null = null;
+  root.traverse((obj) => {
+    if (found) return;
+    const name = obj.name.toLowerCase();
+    if (name.includes(plate.toLowerCase())) {
+      found = obj;
+      return;
+    }
+    if (!fallback && (name.includes("plate") || name.includes("license"))) {
+      fallback = obj;
+    }
+  });
+  return found ?? fallback;
 }
 
 export async function loadAllAssets(
@@ -295,12 +323,16 @@ export async function loadAllAssets(
   const cars: THREE.Group[] = [];
   const carMixers: THREE.AnimationMixer[] = [];
   const carClips: THREE.AnimationClip[][] = [];
+  const carPlates: string[] = [];
+  const carPlateMeshes: Array<THREE.Object3D | null> = [];
 
   for (let i = 1; i <= CAR_COUNT; i++) {
     report(`Loading car ${i} of ${CAR_COUNT}…`, 25 + (i / CAR_COUNT) * 68);
     const gltf = await loadGLB(`/models/car_${i}.glb`);
     const group = gltf.scene;
     group.name = `car_${i}`;
+    const plate = readPlateFromModel(group, `RAB${String(i).padStart(3, "0")}`);
+    const plateMesh = findPlateObject(group, plate);
     group.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         const mesh = obj as THREE.Mesh;
@@ -312,10 +344,16 @@ export async function loadAllAssets(
       `[SceneLoader] car_${i}.glb — animations:`,
       gltf.animations.map((a) => a.name).join(", ") || "none",
     );
+    console.log(`[SceneLoader] car_${i}.glb — plate: ${plate}`);
+    console.log(
+      `[SceneLoader] car_${i}.glb — plate mesh: ${plateMesh?.name ?? "not found"}`,
+    );
     const mixer = new THREE.AnimationMixer(group);
     cars.push(group);
     carMixers.push(mixer);
     carClips.push(gltf.animations);
+    carPlates.push(plate);
+    carPlateMeshes.push(plateMesh);
   }
 
   report("Scene ready", 100);
@@ -330,5 +368,7 @@ export async function loadAllAssets(
     hdriTexture,
     sensorMeshes,
     barrier,
+    carPlates,
+    carPlateMeshes,
   };
 }

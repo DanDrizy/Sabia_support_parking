@@ -20,6 +20,8 @@ export interface SceneAssets {
   hdriTexture: THREE.DataTexture | null;
   sensorMeshes: SensorMeshData[];
   barrier: BarrierAsset | null;
+  carPlates: string[];
+  carPlateMeshes: Array<THREE.Object3D | null>;
 }
 
 export interface BarrierAsset {
@@ -42,6 +44,8 @@ export interface SensorOccupancy {
   sensorIndex: number;
   occupied: boolean;
   carIndex: number | null;
+  plateNumber: string | null;
+  plateCamera: "in1" | "in2" | null;
   distance: number;
 }
 

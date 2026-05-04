@@ -12,6 +12,11 @@ const COLOR_INACTIVE = new THREE.Color(0x1a2332);
 // This is the fallback when ray misses due to mesh complexity.
 const PROXIMITY_RADIUS = 2.2;
 
+export interface PlateDetection {
+  plateNumber: string;
+  camera: "in1" | "in2";
+}
+
 export class SensorManager {
   private sensors: SensorMeshData[];
   private placedIndices: Set<number> = new Set();
@@ -87,7 +92,10 @@ export class SensorManager {
     return Array.from(this.placedIndices).sort((a, b) => a - b);
   }
 
-  tick(cars: THREE.Group[]): SensorOccupancy[] {
+  tick(
+    cars: THREE.Group[],
+    plateDetections: Map<number, PlateDetection> = new Map(),
+  ): SensorOccupancy[] {
     const results: SensorOccupancy[] = [];
     if (this.placedIndices.size === 0) return results;
 
@@ -222,10 +230,14 @@ export class SensorManager {
       }
 
       this.applyColor(data, occupied ? COLOR_OCCUPIED : COLOR_EMPTY);
+      const plateDetection =
+        hitCarIdx != null ? plateDetections.get(hitCarIdx) : undefined;
       results.push({
         sensorIndex: idx,
         occupied,
         carIndex: hitCarIdx,
+        plateNumber: plateDetection?.plateNumber ?? null,
+        plateCamera: plateDetection?.camera ?? null,
         distance: hitDist,
       });
     }

@@ -2,13 +2,15 @@ import { useEffect, useRef, useCallback, RefObject } from "react";
 import * as THREE from "three";
 import { SceneAssets, SensorOccupancy } from "../types";
 import { CarAnimationSequencer } from "../utils/carSequencer";
-import { SensorManager } from "../utils/sensorManager";
+import { SensorManager, type PlateDetection } from "../utils/sensorManager";
 import { usePlayerController } from "./usePlayerController";
 
 export const MAIN_CAMERA_START = { x: 0, y: 1.75, z: 5 };
 const OCCUPANCY_UPDATE_INTERVAL_MS = 100;
 const BARRIER_ROTATION_SPEED = 7;
 const BARRIER_CLOSED_OFFSET = - Math.PI / 2;
+type EntryCameraKey = "in1" | "in2";
+type PlateMemory = PlateDetection & { lastSeenMs: number };
 
 interface UseSceneRendererOptions {
   assets: SceneAssets | null;
@@ -41,6 +43,58 @@ function makeFallbackCam(
   return cam;
 }
 
+function objectIsSeenByCamera(
+  object: THREE.Object3D,
+  camera: THREE.Camera,
+): boolean {
+  camera.updateMatrixWorld(true);
+  camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+    (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+  } else if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+    (camera as THREE.OrthographicCamera).updateProjectionMatrix();
+  }
+
+  object.updateWorldMatrix(true, true);
+  const box = new THREE.Box3().setFromObject(object);
+  if (box.isEmpty()) return false;
+  const sphere = new THREE.Sphere();
+  box.getBoundingSphere(sphere);
+
+  const viewProjection = new THREE.Matrix4().multiplyMatrices(
+    camera.projectionMatrix,
+    camera.matrixWorldInverse,
+  );
+  const frustum = new THREE.Frustum().setFromProjectionMatrix(viewProjection);
+  return frustum.intersectsSphere(sphere);
+}
+
+function rememberEntryCameraPlates(
+  assets: SceneAssets,
+  memory: Map<number, PlateMemory>,
+  nowMs: number,
+) {
+  const entryCameras: Array<[EntryCameraKey, THREE.Camera | null]> = [
+    ["in1", assets.cameras.in1],
+    ["in2", assets.cameras.in2],
+  ];
+
+  entryCameras.forEach(([cameraKey, camera]) => {
+    if (!camera) return;
+    assets.cars.forEach((car, index) => {
+      const plateObject = assets.carPlateMeshes[index] ?? car;
+      if (!objectIsSeenByCamera(plateObject, camera)) return;
+      const carIndex = index + 1;
+      memory.set(carIndex, {
+        plateNumber:
+          assets.carPlates[index] ?? `RAB${String(carIndex).padStart(3, "0")}`,
+        camera: cameraKey,
+        lastSeenMs: nowMs,
+      });
+    });
+  });
+}
+
 export function useSceneRenderer({
   assets,
   canvasRef,
@@ -69,6 +123,7 @@ export function useSceneRenderer({
   const barrierPlacedRef = useRef(barrierPlaced);
   const onOccupancyRef = useRef(onOccupancyUpdate);
   const onAutoPauseRef = useRef(onAutoPauseChange);
+  const plateMemoryRef = useRef<Map<number, PlateMemory>>(new Map());
 
   useEffect(() => {
     animSpeedRef.current = animSpeed;
@@ -223,6 +278,7 @@ export function useSceneRenderer({
 
     const clock = clockRef.current;
     clock.start();
+    plateMemoryRef.current.clear();
     let lastCarIndex = 0;
     let lastOccupancyPushMs = 0;
     let lastBarrierClosed: boolean | null = null;
@@ -282,7 +338,9 @@ export function useSceneRenderer({
 
       const mgr = sensorManagerRef.current;
       if (mgr) {
-        const occupancy = mgr.tick(assets!.cars);
+        const nowMs = performance.now();
+        rememberEntryCameraPlates(assets!, plateMemoryRef.current, nowMs);
+        const occupancy = mgr.tick(assets!.cars, plateMemoryRef.current);
         const barrier = assets!.barrier;
         const barrierClosed =
           occupancy.length > 0 && occupancy.every((o) => o.occupied);
@@ -321,7 +379,6 @@ export function useSceneRenderer({
           }
         }
 
-        const nowMs = performance.now();
         if (
           nowMs - lastOccupancyPushMs > OCCUPANCY_UPDATE_INTERVAL_MS &&
           onOccupancyRef.current
