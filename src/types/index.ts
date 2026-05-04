@@ -7,6 +7,7 @@ export interface SceneAssets {
   carClips: THREE.AnimationClip[][];
   cameras: {
     main: THREE.Camera | null;
+    main2: THREE.Camera | null; // main_camera_2
     in1: THREE.Camera | null;
     in2: THREE.Camera | null;
     out1: THREE.Camera | null;
@@ -15,26 +16,24 @@ export interface SceneAssets {
   collisionMeshes: THREE.Mesh[];
   hdriTexture: THREE.DataTexture | null;
   sensorMeshes: SensorMeshData[];
-  
 }
 
 export interface SensorMeshData {
-  index: number; // 1-based (sensor_1 … sensor_7)
+  index: number;
   mesh: THREE.Mesh;
-  worldPosition: THREE.Vector3; // exported position — never changes
+  worldPosition: THREE.Vector3;
 }
 
 export interface PlacedSensor {
-  index: number; // 1-based
-  label: string; // "SENSOR 1"
+  index: number;
+  label: string;
 }
 
-/** Live occupancy state for one sensor — updated every frame from the render loop */
 export interface SensorOccupancy {
   sensorIndex: number;
   occupied: boolean;
-  carIndex: number | null; // 1-based car index if occupied, else null
-  distance: number; // closest car distance in metres
+  carIndex: number | null;
+  distance: number;
 }
 
 export interface PlayerState {

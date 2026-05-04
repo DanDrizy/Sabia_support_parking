@@ -33,19 +33,22 @@ async function loadGLB(
 
 async function loadHDRI(path: string): Promise<THREE.DataTexture> {
   return new Promise((resolve, reject) => {
-    new RGBELoader().load(
+    const rgbeLoader = new RGBELoader();
+    rgbeLoader.load(
       path,
       (texture) => {
         texture.mapping = THREE.EquirectangularReflectionMapping;
         resolve(texture);
       },
       undefined,
-      (err) =>
+      (err) => {
         reject(
           new Error(
-            `RGBELoader failed: ${err instanceof Error ? err.message : String(err)}`,
+            `RGBELoader failed to load "${path}": ${err instanceof Error ? err.message : String(err)}\n` +
+              `Make sure sky.hdr exists in your project's public/ folder.`,
           ),
-        ),
+        );
+      },
     );
   });
 }
@@ -93,7 +96,7 @@ export async function loadAllAssets(
   const SENSOR_COUNT = 7;
   const report = (msg: string, pct: number) => onProgress?.(msg, pct);
 
-  // ── HDRI ──────────────────────────────────────────────────────────────────
+  // ── HDRI sky ───────────────────────────────────────────────────────────────
   report("Loading sky…", 3);
   let hdriTexture: THREE.DataTexture | null = null;
   try {
@@ -131,6 +134,7 @@ export async function loadAllAssets(
 
   const cameras = {
     main: pickCamera(gltfCams, "main_camera", "main"),
+    main2: pickCamera(gltfCams, "main_camera_2", "main2", "MainCamera2"),
     in1: pickCamera(gltfCams, "camera_in_1", "in_1", "in1"),
     in2: pickCamera(gltfCams, "camera_in_2", "in_2", "in2"),
     out1: pickCamera(gltfCams, "camera_out_1", "out_1", "out1"),
@@ -139,34 +143,37 @@ export async function loadAllAssets(
 
   console.log("[SceneLoader] Resolved cameras:", {
     main: cameras.main?.name ?? "❌ MISSING",
+    main2: cameras.main2?.name ?? "❌ MISSING (optional)",
     in1: cameras.in1?.name ?? "❌ MISSING",
     in2: cameras.in2?.name ?? "❌ MISSING",
     out1: cameras.out1?.name ?? "❌ MISSING",
     out2: cameras.out2?.name ?? "❌ MISSING",
   });
 
+  (["main", "in1", "in2", "out1", "out2"] as const).forEach((key) => {
+    if (!cameras[key]) {
+      console.warn(
+        `[SceneLoader] Camera "${key}" is MISSING. Available: ${gltfCams.map((c) => c.name).join(", ")}`,
+      );
+    }
+  });
+
   camRoot.updateWorldMatrix(true, true);
 
   // ── Sensors ────────────────────────────────────────────────────────────────
-  // IMPORTANT: sensor meshes must be added to environment BEFORE their
-  // world positions are read, so the scene graph is fully resolved.
   report("Loading sensors…", 22);
   const sensorMeshes: SensorMeshData[] = [];
-
   try {
     const sensorGLTF = await loadGLB("/models/sensors.glb");
     const sensorRoot = sensorGLTF.scene;
     debugNames(sensorRoot, "sensors.glb");
 
-    // Add to environment first so world matrices are correct
-    environment.add(sensorRoot);
-    // Force full matrix update on the whole tree
-    environment.updateWorldMatrix(true, true);
+    // Force world matrix update so getWorldPosition is correct
+    sensorRoot.updateWorldMatrix(true, true);
 
     for (let i = 1; i <= SENSOR_COUNT; i++) {
+      // Search for mesh named sensor_1, sensor_2, etc. (case-insensitive)
       let found: THREE.Mesh | null = null;
-
-      // Exact match
       sensorRoot.traverse((obj) => {
         if (found) return;
         if (
@@ -176,7 +183,8 @@ export async function loadAllAssets(
           found = obj as THREE.Mesh;
         }
       });
-      // Partial match fallback
+
+      // Fallback: partial match
       if (!found) {
         sensorRoot.traverse((obj) => {
           if (found) return;
@@ -191,26 +199,18 @@ export async function loadAllAssets(
 
       if (found) {
         const mesh = found as THREE.Mesh;
-
-        // Ensure geometry bounding volumes are computed
-        if (mesh.geometry) {
-          mesh.geometry.computeBoundingBox();
-          mesh.geometry.computeBoundingSphere();
-        }
-
-        // Read world position NOW — mesh is in the scene graph
-        mesh.updateWorldMatrix(true, false);
+        // Capture the baked world position
         const worldPos = new THREE.Vector3();
         mesh.getWorldPosition(worldPos);
 
-        // Start hidden until user places
+        // Hide initially — we'll show them when user places them
         mesh.visible = false;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
 
         sensorMeshes.push({ index: i, mesh, worldPosition: worldPos.clone() });
         console.log(
-          `[SceneLoader] sensor_${i} found "${mesh.name}" at world pos`,
+          `[SceneLoader] sensor_${i} found at world pos`,
           worldPos.toArray().map((v) => v.toFixed(2)),
         );
       } else {
@@ -218,12 +218,11 @@ export async function loadAllAssets(
       }
     }
 
-    console.log(
-      `[SceneLoader] ${sensorMeshes.length}/${SENSOR_COUNT} sensors loaded`,
-    );
+    // Add sensor root to the scene group (meshes are hidden until placed)
+    environment.add(sensorRoot);
   } catch (err) {
     console.warn(
-      "[SceneLoader] sensors.glb failed — sensor feature disabled.",
+      "[SceneLoader] sensors.glb failed to load — sensor feature disabled.",
       err,
     );
   }
@@ -243,11 +242,6 @@ export async function loadAllAssets(
         const mesh = obj as THREE.Mesh;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-        // Pre-compute bounding volumes for raycasting
-        if (mesh.geometry) {
-          mesh.geometry.computeBoundingBox();
-          mesh.geometry.computeBoundingSphere();
-        }
       }
     });
     console.log(
