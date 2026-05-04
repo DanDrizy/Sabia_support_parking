@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { SensorMeshData, PlacedSensor, SensorOccupancy } from "../types";
 
-export const RAY_LENGTH = 2.0; // increased range
+export const RAY_LENGTH = 1.0; // increased range
 
 const COLOR_EMPTY = new THREE.Color(0x00d4ff);
 const COLOR_OCCUPIED = new THREE.Color(0xff2244);
@@ -10,7 +10,7 @@ const COLOR_INACTIVE = new THREE.Color(0x1a2332);
 // Proximity sphere radius — if a car's bounding sphere centre is within this
 // distance of the sensor, it counts as occupied regardless of raycasting.
 // This is the fallback when ray misses due to mesh complexity.
-const PROXIMITY_RADIUS = 3.0;
+const PROXIMITY_RADIUS = 2.2;
 
 export class SensorManager {
   private sensors: SensorMeshData[];

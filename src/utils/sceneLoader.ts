@@ -92,8 +92,8 @@ function debugNames(root: THREE.Object3D, label: string) {
 export async function loadAllAssets(
   onProgress?: (msg: string, pct: number) => void,
 ): Promise<SceneAssets> {
-  const CAR_COUNT = 7;
-  const SENSOR_COUNT = 7;
+  const CAR_COUNT = 8;
+  const SENSOR_COUNT = 8;
   const report = (msg: string, pct: number) => onProgress?.(msg, pct);
 
   // ── HDRI sky ───────────────────────────────────────────────────────────────
