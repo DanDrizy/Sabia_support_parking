@@ -44,7 +44,7 @@ export function CameraLabel({
           letterSpacing: "0.15em",
           textTransform: "uppercase",
           textShadow: isMain ? "0 0 12px rgba(0,212,255,0.5)" : "none",
-          background: "rgba(8,10,14,0.7)",
+          background: "#080a0e",
           padding: "2px 6px",
           borderRadius: "2px",
         }}

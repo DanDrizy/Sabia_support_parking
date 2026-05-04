@@ -14,7 +14,9 @@ interface UseSceneRendererOptions {
   mainViewRef: RefObject<HTMLDivElement | null>;
   subViewRefs: RefObject<HTMLDivElement | null>[];
   sensorManagerRef: React.RefObject<SensorManager | null>;
-  activeCameraRef: React.RefObject<"main" | "main2">; // which main cam is active
+  activeCameraRef: React.RefObject<
+    "main" | "main2" | "main3" | "main4" | "main5"
+  >;
   onCarChange?: (index: number) => void;
   onAllCarsFinished?: () => void;
   onCurrentCarFinished?: () => void;
@@ -22,6 +24,19 @@ interface UseSceneRendererOptions {
   onOccupancyUpdate?: (occupancy: SensorOccupancy[]) => void;
   animSpeed?: number;
   playerControlEnabled?: boolean;
+}
+
+// Creates a simple fallback camera positioned to see the scene
+function makeFallbackCam(
+  position: THREE.Vector3,
+  lookAt: THREE.Vector3,
+  label: string,
+): THREE.PerspectiveCamera {
+  const cam = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  cam.name = `fallback_${label}`;
+  cam.position.copy(position);
+  cam.lookAt(lookAt);
+  return cam;
 }
 
 export function useSceneRenderer({
@@ -63,11 +78,14 @@ export function useSceneRenderer({
     new THREE.PerspectiveCamera(60, 1, 0.1, 1000),
   );
 
-  // Return whichever main camera is currently selected
   const getMainCamera = useCallback((): THREE.Camera => {
     const which = activeCameraRef.current;
+    if (which === "main" && assets?.cameras.main) return assets.cameras.main;
     if (which === "main2" && assets?.cameras.main2) return assets.cameras.main2;
-    return assets?.cameras.main ?? fallbackCamRef.current;
+    if (which === "main3" && assets?.cameras.main3) return assets.cameras.main3;
+    if (which === "main4" && assets?.cameras.main4) return assets.cameras.main4;
+    if (which === "main5" && assets?.cameras.main5) return assets.cameras.main5;
+    return fallbackCamRef.current;
   }, [assets, activeCameraRef]);
 
   const playerCtrl = usePlayerController({
@@ -89,7 +107,7 @@ export function useSceneRenderer({
       out2: assets.cameras.out2?.name ?? "MISSING",
     });
 
-    // ── Renderer ──────────────────────────────────────────────────────────────
+    // ── Renderer ─────────────────────────────────────────────────────────────
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
       antialias: true,
@@ -100,12 +118,7 @@ export function useSceneRenderer({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
-
-    // KEY FIX: disable auto-clear so we can clear per-viewport manually.
-    // Without this, each renderer.render() call clears the entire canvas,
-    // making all but the last viewport appear dark/transparent.
     renderer.autoClear = false;
-
     rendererRef.current = renderer;
 
     // ── Scene ─────────────────────────────────────────────────────────────────
@@ -119,7 +132,7 @@ export function useSceneRenderer({
     }
     sceneRef.current = scene;
 
-    scene.add(new THREE.AmbientLight(0x8899bb, 0.4));
+    scene.add(new THREE.AmbientLight(0x8899bb, 0.8));
     const sun = new THREE.DirectionalLight(0xfff5e0, 1.5);
     sun.position.set(50, 80, 30);
     sun.castShadow = true;
@@ -144,6 +157,45 @@ export function useSceneRenderer({
       MAIN_CAMERA_START.z,
     );
 
+    // ── BUILD FALLBACK CAMERAS for any missing sub-views ──────────────────────
+    // These give each sub-panel a unique angle so the feed is never black.
+    // Tweak positions/lookAt to suit your scene layout.
+    const sceneCenter = new THREE.Vector3(0, 0, 0);
+
+    const resolvedIn1: THREE.Camera =
+      assets.cameras.in1 ??
+      makeFallbackCam(new THREE.Vector3(-8, 4, 12), sceneCenter, "in1");
+
+    const resolvedIn2: THREE.Camera =
+      assets.cameras.in2 ??
+      makeFallbackCam(new THREE.Vector3(8, 4, 12), sceneCenter, "in2");
+
+    const resolvedOut1: THREE.Camera =
+      assets.cameras.out1 ??
+      makeFallbackCam(new THREE.Vector3(-8, 4, -12), sceneCenter, "out1");
+
+    const resolvedOut2: THREE.Camera =
+      assets.cameras.out2 ??
+      makeFallbackCam(new THREE.Vector3(8, 4, -12), sceneCenter, "out2");
+
+    // Log which cameras fell back so it's easy to spot in dev tools
+    if (!assets.cameras.in1)
+      console.warn(
+        "[useSceneRenderer] in1 camera missing from GLB — using fallback position",
+      );
+    if (!assets.cameras.in2)
+      console.warn(
+        "[useSceneRenderer] in2 camera missing from GLB — using fallback position",
+      );
+    if (!assets.cameras.out1)
+      console.warn(
+        "[useSceneRenderer] out1 camera missing from GLB — using fallback position",
+      );
+    if (!assets.cameras.out2)
+      console.warn(
+        "[useSceneRenderer] out2 camera missing from GLB — using fallback position",
+      );
+
     // ── Car sequencer ─────────────────────────────────────────────────────────
     const sequencer = new CarAnimationSequencer(
       assets.carMixers,
@@ -162,10 +214,6 @@ export function useSceneRenderer({
     let lastOccupancyPushMs = 0;
 
     // ── Render a single viewport ───────────────────────────────────────────────
-    // This is the correct multi-viewport pattern for Three.js:
-    // 1. Set scissor + viewport to the div's screen rect
-    // 2. Clear ONLY that region (color + depth)
-    // 3. Render the scene with the assigned camera
     function renderViewport(
       cam: THREE.Camera | null,
       domEl: HTMLDivElement | null,
@@ -182,16 +230,12 @@ export function useSceneRenderer({
 
       if (width <= 0 || height <= 0) return;
 
-      // Scissor restricts clear + draw to this rect only
       renderer.setScissor(left, bottom, width, height);
       renderer.setScissorTest(true);
       renderer.setViewport(left, bottom, width, height);
-
-      // Clear color + depth for this viewport only
       renderer.setClearColor(0x080a0e, 1);
       renderer.clear(true, true, false);
 
-      // Update camera aspect
       if ((cam as THREE.PerspectiveCamera).isPerspectiveCamera) {
         const pcam = cam as THREE.PerspectiveCamera;
         pcam.aspect = width / height;
@@ -218,10 +262,8 @@ export function useSceneRenderer({
 
       if (playerEnabledRef.current) playerCtrl.update(rawDt);
 
-      // Force car world matrices before sensor tick
       assets!.cars.forEach((car) => car.updateWorldMatrix(true, true));
 
-      // Sensor tick
       const mgr = sensorManagerRef.current;
       if (mgr) {
         const occupancy = mgr.tick(assets!.cars);
@@ -235,19 +277,18 @@ export function useSceneRenderer({
         }
       }
 
-      // Resize canvas to match window
       const canvas = canvasRef.current!;
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       if (canvas.width !== w || canvas.height !== h)
         renderer.setSize(w, h, false);
 
-      // Render each viewport independently with its own scissor+clear
+      // ── Render all viewports — resolved cams are NEVER null ───────────────
       renderViewport(getMainCamera(), mainViewRef.current, canvas);
-      renderViewport(assets!.cameras.in1, subViewRefs[0].current, canvas);
-      renderViewport(assets!.cameras.in2, subViewRefs[1].current, canvas);
-      renderViewport(assets!.cameras.out1, subViewRefs[2].current, canvas);
-      renderViewport(assets!.cameras.out2, subViewRefs[3].current, canvas);
+      renderViewport(resolvedIn1, subViewRefs[0].current, canvas);
+      renderViewport(resolvedIn2, subViewRefs[1].current, canvas);
+      renderViewport(resolvedOut1, subViewRefs[2].current, canvas);
+      renderViewport(resolvedOut2, subViewRefs[3].current, canvas);
     }
 
     animate();

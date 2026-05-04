@@ -7,7 +7,10 @@ export interface SceneAssets {
   carClips: THREE.AnimationClip[][];
   cameras: {
     main: THREE.Camera | null;
-    main2: THREE.Camera | null; // main_camera_2
+    main2: THREE.Camera | null;
+    main3: THREE.Camera | null;
+    main4: THREE.Camera | null;
+    main5: THREE.Camera | null;
     in1: THREE.Camera | null;
     in2: THREE.Camera | null;
     out1: THREE.Camera | null;
@@ -48,6 +51,8 @@ export interface CameraView {
   camera: THREE.Camera | null;
   isMain: boolean;
 }
+
+export type MainCamKey = "main" | "main2" | "main3" | "main4" | "main5";
 
 export type CarAnimState = {
   currentCar: number;

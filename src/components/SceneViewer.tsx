@@ -1,5 +1,16 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
-import { SceneAssets, PlacedSensor, SensorOccupancy } from "../types";
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
+import {
+  SceneAssets,
+  PlacedSensor,
+  SensorOccupancy,
+  MainCamKey,
+} from "../types";
 import { useSceneRenderer } from "../hooks/useSceneRenderer";
 import { SensorManager } from "../utils/sensorManager";
 import { CameraLabel } from "./CameraLabel";
@@ -9,29 +20,61 @@ import { SensorPanel } from "./SensorPanel";
 interface SceneViewerProps {
   assets: SceneAssets;
 }
-
-// Bottom strip height in px
 const BOTTOM_H = 160;
-// Sensor panel width in px
-const SENSOR_W = 180;
+
+// All possible main camera keys in display order
+const ALL_MAIN_CAMS: MainCamKey[] = [
+  "main",
+  "main2",
+  "main3",
+  "main4",
+  "main5",
+];
+
+const CAM_DISPLAY_LABELS: Record<MainCamKey, string> = {
+  main: "MAIN CAM 1",
+  main2: "MAIN CAM 2",
+  main3: "MAIN CAM 3",
+  main4: "MAIN CAM 4",
+  main5: "MAIN CAM 5",
+};
 
 export function SceneViewer({ assets }: SceneViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mainViewRef = useRef<HTMLDivElement>(null);
-  // Only 2 sub-cameras: cam_in_1 and cam_in_2
-  const subRef0 = useRef<HTMLDivElement>(null); // cam_in_1
-  const subRef1 = useRef<HTMLDivElement>(null); // cam_in_2
-  const subRef2 = useRef<HTMLDivElement>(null); // cam_out_1
-  const subRef3 = useRef<HTMLDivElement>(null); // cam_out_2
+  const subRef0 = useRef<HTMLDivElement>(null);
+  const subRef1 = useRef<HTMLDivElement>(null);
+  const subRef2 = useRef<HTMLDivElement>(null);
+  const subRef3 = useRef<HTMLDivElement>(null);
   const subViewRefs = [subRef0, subRef1, subRef2, subRef3];
 
-  // ── Active main camera — ref so render loop reads latest without re-render ──
-  const [activeCam, setActiveCam] = React.useState<"main" | "main2">("main");
-  const activeCameraRef = useRef<"main" | "main2">("main");
-  const switchCamera = (cam: "main" | "main2") => {
+  // ── Active main camera ────────────────────────────────────────────────────
+  const [activeCam, setActiveCam] = useState<MainCamKey>("main");
+  const activeCameraRef = useRef<MainCamKey>("main");
+
+  const switchCamera = (cam: MainCamKey) => {
     activeCameraRef.current = cam;
     setActiveCam(cam);
   };
+
+  // Derive which main cameras actually exist in the loaded GLB
+  const availableMainCams = useMemo<MainCamKey[]>(
+    () => ALL_MAIN_CAMS.filter((k) => assets.cameras[k] != null),
+    [assets.cameras],
+  );
+
+  // Keyboard shortcut: 1-5 to switch main cameras
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const digit = parseInt(e.key, 10);
+      if (digit >= 1 && digit <= 5) {
+        const key = ALL_MAIN_CAMS[digit - 1];
+        if (availableMainCams.includes(key)) switchCamera(key);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [availableMainCams]);
 
   // ── Sensor manager ────────────────────────────────────────────────────────
   const sensorManagerRef = useRef<SensorManager | null>(null);
@@ -39,7 +82,6 @@ export function SceneViewer({ assets }: SceneViewerProps) {
     sensorManagerRef.current = new SensorManager(assets.sensorMeshes);
   }, [assets.sensorMeshes]);
 
-  // ── Sensor UI state ───────────────────────────────────────────────────────
   const [placedSensors, setPlacedSensors] = useState<PlacedSensor[]>([]);
   const [nextSensorIndex, setNextSensorIndex] = useState(1);
   const [allSensorsPlaced, setAllSensorsPlaced] = useState(false);
@@ -157,7 +199,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
     if (time < duration) setIsCurrentFinished(false);
   };
 
-  // ── Drag-drop ─────────────────────────────────────────────────────────────
+  // ── Drag-drop (sensor) ────────────────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -179,7 +221,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
         overflow: "hidden",
       }}
     >
-      {/* ── Shared WebGL canvas (full window) ─────────────────────────────── */}
+      {/* ── Shared WebGL canvas ──────────────────────────────────────────── */}
       <canvas
         ref={canvasRef}
         style={{
@@ -191,7 +233,35 @@ export function SceneViewer({ assets }: SceneViewerProps) {
         }}
       />
 
-      {/* ── MAIN CAMERA VIEWPORT — top full width ─────────────────────────── */}
+      {/* ── HUD (top bar + camera switcher) ─────────────────────────────── */}
+      <HUD
+        currentCar={currentCar}
+        totalCars={assets.cars.length}
+        allFinished={allFinished}
+        isLocked={false}
+        speed={animSpeed}
+        onSpeedChange={setAnimSpeed}
+        isPaused={isPaused}
+        isCurrentFinished={isCurrentFinished}
+        carSpeedBoost={carSpeedBoost}
+        onTogglePause={handleTogglePause}
+        onFaster={handleFaster}
+        onRepeat={handleRepeat}
+        onPrevious={handlePrevious}
+        onNext={handleNext}
+        progress={progress}
+        duration={duration}
+        onSeek={handleSeek}
+        playerControlEnabled={playerControlEnabled}
+        onTogglePlayerControl={() => setPlayerControlEnabled((v) => !v)}
+        onSkip={skipCurrent}
+        // multi-cam props
+        activeCam={activeCam}
+        availableMainCams={availableMainCams}
+        onSwitchCamera={switchCamera}
+      />
+
+      {/* ── MAIN CAMERA VIEWPORT ────────────────────────────────────────── */}
       <div
         ref={mainViewRef}
         onDragOver={handleDragOver}
@@ -204,73 +274,13 @@ export function SceneViewer({ assets }: SceneViewerProps) {
           bottom: BOTTOM_H,
           border: "1px solid rgba(0,212,255,0.12)",
           pointerEvents: "auto",
-          // No background — renderer draws into this region via scissor
         }}
       >
-        <CameraLabel
-          label={activeCam === "main" ? "MAIN CAM 1" : "MAIN CAM 2"}
-          isMain
-          isActive
-        />
+        <CameraLabel label={CAM_DISPLAY_LABELS[activeCam]} isMain isActive />
         <Crosshair />
         <DropHint />
 
-        {/* ── Camera switch button — top right of main viewport ── */}
-        <div
-          style={{
-            position: "absolute",
-            top: "8px",
-            right: "10px",
-            display: "flex",
-            gap: "4px",
-            zIndex: 20,
-            pointerEvents: "auto",
-          }}
-        >
-          {(["main", "main2"] as const).map((key, idx) => {
-            const label = idx === 0 ? "CAM 1" : "CAM 2";
-            const active = activeCam === key;
-            const hasCam = idx === 0 ? true : !!assets.cameras.main2;
-            if (!hasCam) return null;
-            return (
-              <button
-                key={key}
-                onClick={() => switchCamera(key)}
-                style={{
-                  fontFamily: "'Share Tech Mono', monospace",
-                  fontSize: "0.55rem",
-                  letterSpacing: "0.12em",
-                  padding: "4px 10px",
-                  background: active
-                    ? "rgba(0,212,255,0.15)"
-                    : "rgba(6,8,12,0.75)",
-                  border: `1px solid ${active ? "rgba(0,212,255,0.6)" : "rgba(40,60,80,0.8)"}`,
-                  borderRadius: "3px",
-                  color: active ? "#00d4ff" : "#4a6a8a",
-                  cursor: "pointer",
-                  transition: "all 0.15s",
-                  boxShadow: active ? "0 0 10px rgba(0,212,255,0.2)" : "none",
-                }}
-                onMouseEnter={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.borderColor = "rgba(0,212,255,0.3)";
-                    e.currentTarget.style.color = "#7a9ab6";
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!active) {
-                    e.currentTarget.style.borderColor = "rgba(40,60,80,0.8)";
-                    e.currentTarget.style.color = "#4a6a8a";
-                  }
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Occupied space alert — floats inside main cam at top-center */}
+        {/* Occupied-space alert */}
         {occupiedCount > 0 && (
           <div
             style={{
@@ -312,9 +322,27 @@ export function SceneViewer({ assets }: SceneViewerProps) {
             </span>
           </div>
         )}
+
+        {/* Keyboard hint — shown when multiple main cams exist */}
+        {availableMainCams.length > 1 && (
+          <div
+            style={{
+              position: "absolute",
+              bottom: "10px",
+              right: "10px",
+              pointerEvents: "none",
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: "0.48rem",
+              color: "rgba(0,212,255,0.3)",
+              letterSpacing: "0.1em",
+            }}
+          >
+            PRESS 1–{availableMainCams.length} TO SWITCH VIEW
+          </div>
+        )}
       </div>
 
-      {/* ── BOTTOM STRIP ──────────────────────────────────────────────────── */}
+      {/* ── BOTTOM STRIP ─────────────────────────────────────────────────── */}
       <div
         style={{
           position: "absolute",
@@ -331,7 +359,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
           borderTop: "1px solid #1a2332",
         }}
       >
-        {/* cam_in_1 — no background so Three.js render shows through */}
+        {/* cam_in_1 */}
         <div
           ref={subRef0}
           style={{
@@ -395,10 +423,9 @@ export function SceneViewer({ assets }: SceneViewerProps) {
           <Vignette />
         </div>
 
-        {/* Spacer — pushes controls to the right */}
         <div style={{ flexShrink: 0, width: "4px" }} />
 
-        {/* ── Playback controls ──────────────────────────────────────────── */}
+        {/* ── Playback controls ────────────────────────────────────────── */}
         <div
           style={{
             flexShrink: 0,
@@ -410,7 +437,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
             paddingRight: "8px",
           }}
         >
-          {/* Speed slider row */}
+          {/* Speed slider */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span
               style={{
@@ -474,7 +501,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
             ))}
           </div>
 
-          {/* ◀◀  ▶  ▶▶ buttons */}
+          {/* Transport buttons */}
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
             <CtrlBtn
               onClick={handlePrevious}
@@ -508,7 +535,6 @@ export function SceneViewer({ assets }: SceneViewerProps) {
               }
             >
               {allFinished || isCurrentFinished ? (
-                // Repeat icon
                 <svg
                   width="18"
                   height="18"
@@ -519,7 +545,6 @@ export function SceneViewer({ assets }: SceneViewerProps) {
                   <polygon points="7,0 13,3 7,6" />
                 </svg>
               ) : isPaused ? (
-                // Play icon
                 <svg
                   width="18"
                   height="18"
@@ -529,7 +554,6 @@ export function SceneViewer({ assets }: SceneViewerProps) {
                   <polygon points="4,2 16,9 4,16" />
                 </svg>
               ) : (
-                // Pause icon
                 <svg
                   width="18"
                   height="18"
@@ -605,7 +629,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
         </div>
       </div>
 
-      {/* ── SENSOR PANEL — floats top-left over main cam ───────────────────── */}
+      {/* ── SENSOR PANEL ──────────────────────────────────────────────────── */}
       <SensorPanel
         nextIndex={nextSensorIndex}
         totalSensors={assets.sensorMeshes.length}
@@ -634,7 +658,7 @@ function Vignette() {
         position: "absolute",
         inset: 0,
         background:
-          "radial-gradient(ellipse at center, transparent 55%, rgba(6,8,12,0.5) 100%)",
+          "radial-gradient(ellipse at center, transparent 80%, rgba(0,0,0,0.2) 100%)",
         borderRadius: "3px",
         pointerEvents: "none",
       }}

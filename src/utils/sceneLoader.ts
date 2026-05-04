@@ -96,7 +96,7 @@ export async function loadAllAssets(
   const SENSOR_COUNT = 8;
   const report = (msg: string, pct: number) => onProgress?.(msg, pct);
 
-  // ── HDRI sky ───────────────────────────────────────────────────────────────
+  // ── HDRI sky ──────────────────────────────────────────────────────────────
   report("Loading sky…", 3);
   let hdriTexture: THREE.DataTexture | null = null;
   try {
@@ -105,7 +105,7 @@ export async function loadAllAssets(
     console.warn("[SceneLoader] sky.hdr not found — using solid colour.", err);
   }
 
-  // ── Environment ────────────────────────────────────────────────────────────
+  // ── Environment ───────────────────────────────────────────────────────────
   report("Loading environment…", 8);
   const envGLTF = await loadGLB("/models/env.glb");
   const environment = envGLTF.scene;
@@ -121,7 +121,7 @@ export async function loadAllAssets(
   const collisionMeshes = collectMeshes(environment);
   console.log(`[SceneLoader] Collision meshes: ${collisionMeshes.length}`);
 
-  // ── Cameras ────────────────────────────────────────────────────────────────
+  // ── Cameras ───────────────────────────────────────────────────────────────
   report("Loading cameras…", 18);
   const camGLTF = await loadGLB("/models/camera.glb");
   const camRoot = camGLTF.scene;
@@ -133,21 +133,27 @@ export async function loadAllAssets(
   );
 
   const cameras = {
-    main: pickCamera(gltfCams, "main_camera", "main"),
-    main2: pickCamera(gltfCams, "main_camera_2", "main2", "MainCamera2"),
-    in1: pickCamera(gltfCams, "camera_in_1", "in_1", "in1"),
-    in2: pickCamera(gltfCams, "camera_in_2", "in_2", "in2"),
-    out1: pickCamera(gltfCams, "camera_out_1", "out_1", "out1"),
-    out2: pickCamera(gltfCams, "camera_out_2", "out_2", "out2"),
+    main:  pickCamera(gltfCams, "main_camera",   "main"),
+    main2: pickCamera(gltfCams, "main_camera_2",  "main2", "MainCamera2"),
+    main3: pickCamera(gltfCams, "main_camera_3",  "main3", "MainCamera3"),
+    main4: pickCamera(gltfCams, "main_camera_4",  "main4", "MainCamera4"),
+    main5: pickCamera(gltfCams, "main_camera_5",  "main5", "MainCamera5"),
+    in1:   pickCamera(gltfCams, "camera_in_1",    "in_1",  "in1"),
+    in2:   pickCamera(gltfCams, "camera_in_2",    "in_2",  "in2"),
+    out1:  pickCamera(gltfCams, "camera_out_1",   "out_1", "out1"),
+    out2:  pickCamera(gltfCams, "camera_out_2",   "out_2", "out2"),
   };
 
   console.log("[SceneLoader] Resolved cameras:", {
-    main: cameras.main?.name ?? "❌ MISSING",
+    main:  cameras.main?.name  ?? "❌ MISSING",
     main2: cameras.main2?.name ?? "❌ MISSING (optional)",
-    in1: cameras.in1?.name ?? "❌ MISSING",
-    in2: cameras.in2?.name ?? "❌ MISSING",
-    out1: cameras.out1?.name ?? "❌ MISSING",
-    out2: cameras.out2?.name ?? "❌ MISSING",
+    main3: cameras.main3?.name ?? "❌ MISSING (optional)",
+    main4: cameras.main4?.name ?? "❌ MISSING (optional)",
+    main5: cameras.main5?.name ?? "❌ MISSING (optional)",
+    in1:   cameras.in1?.name   ?? "❌ MISSING",
+    in2:   cameras.in2?.name   ?? "❌ MISSING",
+    out1:  cameras.out1?.name  ?? "❌ MISSING",
+    out2:  cameras.out2?.name  ?? "❌ MISSING",
   });
 
   (["main", "in1", "in2", "out1", "out2"] as const).forEach((key) => {
@@ -160,19 +166,16 @@ export async function loadAllAssets(
 
   camRoot.updateWorldMatrix(true, true);
 
-  // ── Sensors ────────────────────────────────────────────────────────────────
+  // ── Sensors ───────────────────────────────────────────────────────────────
   report("Loading sensors…", 22);
   const sensorMeshes: SensorMeshData[] = [];
   try {
     const sensorGLTF = await loadGLB("/models/sensors.glb");
     const sensorRoot = sensorGLTF.scene;
     debugNames(sensorRoot, "sensors.glb");
-
-    // Force world matrix update so getWorldPosition is correct
     sensorRoot.updateWorldMatrix(true, true);
 
     for (let i = 1; i <= SENSOR_COUNT; i++) {
-      // Search for mesh named sensor_1, sensor_2, etc. (case-insensitive)
       let found: THREE.Mesh | null = null;
       sensorRoot.traverse((obj) => {
         if (found) return;
@@ -183,8 +186,6 @@ export async function loadAllAssets(
           found = obj as THREE.Mesh;
         }
       });
-
-      // Fallback: partial match
       if (!found) {
         sensorRoot.traverse((obj) => {
           if (found) return;
@@ -199,15 +200,11 @@ export async function loadAllAssets(
 
       if (found) {
         const mesh = found as THREE.Mesh;
-        // Capture the baked world position
         const worldPos = new THREE.Vector3();
         mesh.getWorldPosition(worldPos);
-
-        // Hide initially — we'll show them when user places them
         mesh.visible = false;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
-
         sensorMeshes.push({ index: i, mesh, worldPosition: worldPos.clone() });
         console.log(
           `[SceneLoader] sensor_${i} found at world pos`,
@@ -218,7 +215,6 @@ export async function loadAllAssets(
       }
     }
 
-    // Add sensor root to the scene group (meshes are hidden until placed)
     environment.add(sensorRoot);
   } catch (err) {
     console.warn(
@@ -227,7 +223,7 @@ export async function loadAllAssets(
     );
   }
 
-  // ── Cars ───────────────────────────────────────────────────────────────────
+  // ── Cars ──────────────────────────────────────────────────────────────────
   const cars: THREE.Group[] = [];
   const carMixers: THREE.AnimationMixer[] = [];
   const carClips: THREE.AnimationClip[][] = [];
