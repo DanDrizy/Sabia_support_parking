@@ -80,7 +80,11 @@ export class CarAnimationSequencer {
   }
 
   togglePause() {
-    this.paused = !this.paused;
+    this.setPaused(!this.paused);
+  }
+
+  setPaused(paused: boolean) {
+    this.paused = paused;
     const mixer = this.mixers[this.currentIndex];
     if (!mixer) return;
     const clips = this.clips[this.currentIndex] ?? [];

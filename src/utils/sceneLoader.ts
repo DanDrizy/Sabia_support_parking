@@ -1,7 +1,11 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
-import { SceneAssets, SensorMeshData } from "../types";
+import {
+  type BarrierAsset,
+  type SceneAssets,
+  type SensorMeshData,
+} from "../types";
 
 const loader = new GLTFLoader();
 
@@ -87,6 +91,41 @@ function debugNames(root: THREE.Object3D, label: string) {
   console.groupCollapsed(`[SceneLoader] ${label} — ${names.length} objects`);
   names.forEach((n) => console.log(n));
   console.groupEnd();
+}
+
+function pickBarrierPivot(root: THREE.Group): THREE.Object3D {
+  if (root.children.length === 1) return root.children[0];
+
+  const namedCandidates: THREE.Object3D[] = [];
+  const meshCandidates: THREE.Mesh[] = [];
+
+  root.traverse((obj) => {
+    if (obj === root) return;
+    const name = obj.name.toLowerCase();
+    if (name.includes("barrier") || name.includes("gate") || name.includes("arm")) {
+      namedCandidates.push(obj);
+    }
+    if ((obj as THREE.Mesh).isMesh) meshCandidates.push(obj as THREE.Mesh);
+  });
+
+  const namedMesh = namedCandidates.find((obj) => (obj as THREE.Mesh).isMesh);
+  if (namedMesh) return namedMesh;
+  if (namedCandidates.length > 0) return namedCandidates[0];
+
+  let largestMesh: THREE.Mesh | null = null;
+  let largestVolume = -1;
+  for (const mesh of meshCandidates) {
+    const box = new THREE.Box3().setFromObject(mesh);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const volume = size.x * size.y * size.z;
+    if (volume > largestVolume) {
+      largestVolume = volume;
+      largestMesh = mesh;
+    }
+  }
+
+  return largestMesh ?? root;
 }
 
 export async function loadAllAssets(
@@ -223,6 +262,35 @@ export async function loadAllAssets(
     );
   }
 
+  // ── Barrier ───────────────────────────────────────────────────────────────
+  report("Loading barrier…", 24);
+  let barrier: BarrierAsset | null = null;
+  try {
+    const barrierGLTF = await loadGLB("/models/barrier.glb");
+    const barrierRoot = barrierGLTF.scene;
+    barrierRoot.name = "barrier";
+    debugNames(barrierRoot, "barrier.glb");
+    const barrierPivot = pickBarrierPivot(barrierRoot);
+    barrierRoot.visible = false;
+    barrierRoot.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const mesh = obj as THREE.Mesh;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
+    console.log(
+      `[SceneLoader] Barrier pivot: ${barrierPivot.type} "${barrierPivot.name || "(unnamed)"}"`,
+    );
+    environment.add(barrierRoot);
+    barrier = { root: barrierRoot, pivot: barrierPivot };
+  } catch (err) {
+    console.warn(
+      "[SceneLoader] barrier.glb failed to load — barrier feature disabled.",
+      err,
+    );
+  }
+
   // ── Cars ──────────────────────────────────────────────────────────────────
   const cars: THREE.Group[] = [];
   const carMixers: THREE.AnimationMixer[] = [];
@@ -261,5 +329,6 @@ export async function loadAllAssets(
     collisionMeshes,
     hdriTexture,
     sensorMeshes,
+    barrier,
   };
 }

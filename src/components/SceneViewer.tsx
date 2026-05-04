@@ -86,6 +86,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
   const [nextSensorIndex, setNextSensorIndex] = useState(1);
   const [allSensorsPlaced, setAllSensorsPlaced] = useState(false);
   const [occupancy, setOccupancy] = useState<SensorOccupancy[]>([]);
+  const [barrierPlaced, setBarrierPlaced] = useState(false);
 
   const syncSensorState = useCallback(() => {
     const mgr = sensorManagerRef.current;
@@ -160,8 +161,10 @@ export function SceneViewer({ assets }: SceneViewerProps) {
       setDuration(d);
     },
     onOccupancyUpdate: setOccupancy,
+    onAutoPauseChange: setIsPaused,
     animSpeed,
     playerControlEnabled,
+    barrierPlaced,
   });
 
   const handleTogglePause = () => {
@@ -198,18 +201,31 @@ export function SceneViewer({ assets }: SceneViewerProps) {
     setProgress(time);
     if (time < duration) setIsCurrentFinished(false);
   };
+  const handleBarrierDrop = useCallback(() => {
+    if (assets.barrier) setBarrierPlaced(true);
+  }, [assets.barrier]);
+  const handleBarrierRemove = useCallback(() => {
+    if (assets.barrier) {
+      assets.barrier.root.visible = false;
+      setBarrierPlaced(false);
+    }
+  }, [assets.barrier]);
 
-  // ── Drag-drop (sensor) ────────────────────────────────────────────────────
+  // ── Drag-drop (scene assets) ──────────────────────────────────────────────
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
   };
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (e.dataTransfer.getData("text/plain") === "sensor") handleSensorDrop();
+    const dropped = e.dataTransfer.getData("text/plain");
+    if (dropped === "sensor") handleSensorDrop();
+    if (dropped === "barrier") handleBarrierDrop();
   };
 
   const occupiedCount = occupancy.filter((o) => o.occupied).length;
+  const barrierClosed =
+    barrierPlaced && occupancy.length > 0 && occupancy.every((o) => o.occupied);
 
   return (
     <div
@@ -636,10 +652,13 @@ export function SceneViewer({ assets }: SceneViewerProps) {
         placedSensors={placedSensors}
         occupancy={occupancy}
         allPlaced={allSensorsPlaced}
-        onDrop={handleSensorDrop}
+        barrierAvailable={assets.barrier != null}
+        barrierPlaced={barrierPlaced}
+        barrierClosed={barrierClosed}
         onRemove={handleSensorRemove}
         onRemoveAll={handleSensorRemoveAll}
-        mainViewRef={mainViewRef}
+        onBarrierDrop={handleBarrierDrop}
+        onBarrierRemove={handleBarrierRemove}
       />
 
       <style>{`
@@ -755,7 +774,7 @@ function DropHint() {
           letterSpacing: "0.2em",
         }}
       >
-        DROP TO PLACE SENSOR
+        DROP TO PLACE ASSET
       </div>
     </div>
   );

@@ -19,6 +19,12 @@ export interface SceneAssets {
   collisionMeshes: THREE.Mesh[];
   hdriTexture: THREE.DataTexture | null;
   sensorMeshes: SensorMeshData[];
+  barrier: BarrierAsset | null;
+}
+
+export interface BarrierAsset {
+  root: THREE.Group;
+  pivot: THREE.Object3D;
 }
 
 export interface SensorMeshData {

@@ -7,10 +7,13 @@ interface SensorPanelProps {
   placedSensors: PlacedSensor[];
   occupancy: SensorOccupancy[]; // live per-sensor occupancy
   allPlaced: boolean;
-  onDrop: () => void;
+  barrierAvailable: boolean;
+  barrierPlaced: boolean;
+  barrierClosed: boolean;
   onRemove: (index: number) => void;
   onRemoveAll: () => void;
-  mainViewRef: React.RefObject<HTMLDivElement | null>;
+  onBarrierDrop: () => void;
+  onBarrierRemove: () => void;
 }
 
 export function SensorPanel({
@@ -19,9 +22,13 @@ export function SensorPanel({
   placedSensors,
   occupancy,
   allPlaced,
-  onDrop,
+  barrierAvailable,
+  barrierPlaced,
+  barrierClosed,
   onRemove,
   onRemoveAll,
+  onBarrierDrop,
+  onBarrierRemove,
 }: SensorPanelProps) {
   const draggingRef = useRef(false);
 
@@ -32,10 +39,10 @@ export function SensorPanel({
   const occupiedCount = occupancy.filter((o) => o.occupied).length;
   const canPlace = !allPlaced && totalSensors > 0;
 
-  const handleDragStart = (e: React.DragEvent) => {
+  const handleDragStart = (e: React.DragEvent, item: "sensor" | "barrier") => {
     draggingRef.current = true;
     e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("text/plain", "sensor");
+    e.dataTransfer.setData("text/plain", item);
   };
   const handleDragEnd = () => {
     draggingRef.current = false;
@@ -138,7 +145,7 @@ export function SensorPanel({
         {canPlace ? (
           <div
             draggable
-            onDragStart={handleDragStart}
+            onDragStart={(e) => handleDragStart(e, "sensor")}
             onDragEnd={handleDragEnd}
             style={{
               display: "flex",
@@ -243,6 +250,143 @@ export function SensorPanel({
             }}
           >
             ✕ REMOVE ALL
+          </button>
+        )}
+      </div>
+
+      <div
+        style={{
+          background: "rgba(8,10,14,0.92)",
+          border: "1px solid #1a2332",
+          borderRadius: "4px",
+          padding: "10px 12px",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "8px",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: "0.6rem",
+              color: "#ffcc00",
+              letterSpacing: "0.2em",
+            }}
+          >
+            BARRIER
+          </div>
+          {barrierPlaced && (
+            <div
+              style={{
+                fontFamily: "'Share Tech Mono', monospace",
+                fontSize: "0.52rem",
+                color: barrierClosed ? "#ff2244" : "#00ff88",
+                letterSpacing: "0.12em",
+              }}
+            >
+              {barrierClosed ? "CLOSED" : "OPEN"}
+            </div>
+          )}
+        </div>
+
+        {!barrierAvailable ? (
+          <div
+            style={{
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: "0.55rem",
+              color: "#3d5068",
+              letterSpacing: "0.08em",
+              lineHeight: 1.7,
+              padding: "4px 0",
+            }}
+          >
+            barrier.glb
+            <br />
+            not loaded
+          </div>
+        ) : !barrierPlaced ? (
+          <div
+            draggable
+            onDragStart={(e) => handleDragStart(e, "barrier")}
+            onDragEnd={handleDragEnd}
+            onDoubleClick={onBarrierDrop}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              padding: "8px 10px",
+              background: "rgba(255,204,0,0.06)",
+              border: "1px dashed rgba(255,204,0,0.35)",
+              borderRadius: "4px",
+              cursor: "grab",
+              userSelect: "none",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,204,0,0.12)";
+              e.currentTarget.style.borderColor = "rgba(255,204,0,0.6)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "rgba(255,204,0,0.06)";
+              e.currentTarget.style.borderColor = "rgba(255,204,0,0.35)";
+            }}
+          >
+            <BarrierIcon color="#ffcc00" />
+            <div>
+              <div
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: "0.58rem",
+                  color: "#ffcc00",
+                  letterSpacing: "0.1em",
+                }}
+              >
+                GATE ARM
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Share Tech Mono', monospace",
+                  fontSize: "0.5rem",
+                  color: "#5e5432",
+                  letterSpacing: "0.05em",
+                  marginTop: "2px",
+                }}
+              >
+                DRAG → MAIN VIEW
+              </div>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={onBarrierRemove}
+            style={{
+              width: "100%",
+              padding: "5px 0",
+              fontFamily: "'Share Tech Mono', monospace",
+              fontSize: "0.55rem",
+              letterSpacing: "0.1em",
+              color: "#ffcc00",
+              background: "transparent",
+              border: "1px solid rgba(255,204,0,0.3)",
+              borderRadius: "3px",
+              cursor: "pointer",
+              transition: "all 0.15s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "rgba(255,204,0,0.08)";
+              e.currentTarget.style.borderColor = "rgba(255,204,0,0.6)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.borderColor = "rgba(255,204,0,0.3)";
+            }}
+          >
+            REMOVE BARRIER
           </button>
         )}
       </div>
@@ -537,6 +681,39 @@ function SensorIcon({ color }: { color: string }) {
         strokeWidth="1"
         opacity="0.5"
       />
+    </svg>
+  );
+}
+
+function BarrierIcon({ color }: { color: string }) {
+  return (
+    <svg
+      width="24"
+      height="22"
+      viewBox="0 0 24 22"
+      fill="none"
+      style={{ flexShrink: 0 }}
+    >
+      <rect x="3" y="4" width="4" height="15" rx="1" fill={color} />
+      <rect
+        x="6"
+        y="5"
+        width="15"
+        height="3"
+        rx="1"
+        fill={color}
+        opacity="0.85"
+      />
+      <circle cx="5" cy="6.5" r="2.5" fill="#080a0e" opacity="0.55" />
+      <circle cx="5" cy="6.5" r="1.5" fill={color} opacity="0.9" />
+      <path
+        d="M9 6.5h3M14 6.5h3"
+        stroke="#080a0e"
+        strokeWidth="1"
+        strokeLinecap="round"
+        opacity="0.65"
+      />
+      <rect x="1" y="18" width="8" height="2" rx="1" fill={color} />
     </svg>
   );
 }

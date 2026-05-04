@@ -7,23 +7,25 @@ import { usePlayerController } from "./usePlayerController";
 
 export const MAIN_CAMERA_START = { x: 0, y: 1.75, z: 5 };
 const OCCUPANCY_UPDATE_INTERVAL_MS = 100;
+const BARRIER_ROTATION_SPEED = 7;
+const BARRIER_CLOSED_OFFSET = - Math.PI / 2;
 
 interface UseSceneRendererOptions {
   assets: SceneAssets | null;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   mainViewRef: RefObject<HTMLDivElement | null>;
   subViewRefs: RefObject<HTMLDivElement | null>[];
-  sensorManagerRef: React.RefObject<SensorManager | null>;
-  activeCameraRef: React.RefObject<
-    "main" | "main2" | "main3" | "main4" | "main5"
-  >;
+  sensorManagerRef: RefObject<SensorManager | null>;
+  activeCameraRef: RefObject<"main" | "main2" | "main3" | "main4" | "main5">;
   onCarChange?: (index: number) => void;
   onAllCarsFinished?: () => void;
   onCurrentCarFinished?: () => void;
   onProgressUpdate?: (progress: number, duration: number) => void;
   onOccupancyUpdate?: (occupancy: SensorOccupancy[]) => void;
+  onAutoPauseChange?: (paused: boolean) => void;
   animSpeed?: number;
   playerControlEnabled?: boolean;
+  barrierPlaced?: boolean;
 }
 
 // Creates a simple fallback camera positioned to see the scene
@@ -51,8 +53,10 @@ export function useSceneRenderer({
   onCurrentCarFinished,
   onProgressUpdate,
   onOccupancyUpdate,
+  onAutoPauseChange,
   animSpeed = 1.0,
   playerControlEnabled = false,
+  barrierPlaced = false,
 }: UseSceneRendererOptions) {
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -62,7 +66,9 @@ export function useSceneRenderer({
 
   const animSpeedRef = useRef(animSpeed);
   const playerEnabledRef = useRef(playerControlEnabled);
+  const barrierPlacedRef = useRef(barrierPlaced);
   const onOccupancyRef = useRef(onOccupancyUpdate);
+  const onAutoPauseRef = useRef(onAutoPauseChange);
 
   useEffect(() => {
     animSpeedRef.current = animSpeed;
@@ -71,8 +77,14 @@ export function useSceneRenderer({
     playerEnabledRef.current = playerControlEnabled;
   }, [playerControlEnabled]);
   useEffect(() => {
+    barrierPlacedRef.current = barrierPlaced;
+  }, [barrierPlaced]);
+  useEffect(() => {
     onOccupancyRef.current = onOccupancyUpdate;
   }, [onOccupancyUpdate]);
+  useEffect(() => {
+    onAutoPauseRef.current = onAutoPauseChange;
+  }, [onAutoPauseChange]);
 
   const fallbackCamRef = useRef<THREE.PerspectiveCamera>(
     new THREE.PerspectiveCamera(60, 1, 0.1, 1000),
@@ -150,6 +162,7 @@ export function useSceneRenderer({
 
     scene.add(assets.environment);
     assets.cars.forEach((car) => scene.add(car));
+    if (assets.barrier) assets.barrier.root.visible = barrierPlacedRef.current;
 
     fallbackCamRef.current.position.set(
       MAIN_CAMERA_START.x,
@@ -212,6 +225,9 @@ export function useSceneRenderer({
     clock.start();
     let lastCarIndex = 0;
     let lastOccupancyPushMs = 0;
+    let lastBarrierClosed: boolean | null = null;
+    let autoPausedByBarrier = false;
+    const barrierOpenRotation = assets.barrier?.pivot.rotation.z ?? 0;
 
     // ── Render a single viewport ───────────────────────────────────────────────
     function renderViewport(
@@ -267,6 +283,44 @@ export function useSceneRenderer({
       const mgr = sensorManagerRef.current;
       if (mgr) {
         const occupancy = mgr.tick(assets!.cars);
+        const barrier = assets!.barrier;
+        const barrierClosed =
+          occupancy.length > 0 && occupancy.every((o) => o.occupied);
+
+        if (barrier) {
+          barrier.root.visible = barrierPlacedRef.current;
+          if (barrierPlacedRef.current) {
+            const targetRotation =
+              barrierOpenRotation +
+              (barrierClosed ? BARRIER_CLOSED_OFFSET : 0);
+            barrier.pivot.rotation.z = THREE.MathUtils.damp(
+              barrier.pivot.rotation.z,
+              targetRotation,
+              BARRIER_ROTATION_SPEED,
+              rawDt,
+            );
+          }
+        }
+
+        if (!barrierPlacedRef.current && autoPausedByBarrier) {
+          sequencer.setPaused(false);
+          autoPausedByBarrier = false;
+          onAutoPauseRef.current?.(false);
+        }
+
+        if (barrierPlacedRef.current && lastBarrierClosed !== barrierClosed) {
+          lastBarrierClosed = barrierClosed;
+          if (barrierClosed) {
+            autoPausedByBarrier = !sequencer.isPaused();
+            sequencer.setPaused(true);
+            if (autoPausedByBarrier) onAutoPauseRef.current?.(true);
+          } else if (autoPausedByBarrier) {
+            sequencer.setPaused(false);
+            autoPausedByBarrier = false;
+            onAutoPauseRef.current?.(false);
+          }
+        }
+
         const nowMs = performance.now();
         if (
           nowMs - lastOccupancyPushMs > OCCUPANCY_UPDATE_INTERVAL_MS &&
