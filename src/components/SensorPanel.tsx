@@ -423,11 +423,7 @@ export function SensorPanel({
             const occupied = o?.occupied ?? false;
             const carLabel = o?.carIndex != null ? `CAR_${o.carIndex}` : null;
             const plateLabel = o?.plateNumber ?? carLabel;
-            const cameraLabel = o?.plateCamera
-              ? o.plateCamera === "in1"
-                ? "CAM / IN-1"
-                : "CAM / IN-2"
-              : null;
+            const cameraLabel = o?.plateCamera ? "CAPTURE PLATE CAM" : null;
             const distLabel =
               o && o.distance >= 0
                 ? `${(o.distance * 100).toFixed(1)}cm`

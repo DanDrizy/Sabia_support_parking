@@ -11,10 +11,7 @@ export interface SceneAssets {
     main3: THREE.Camera | null;
     main4: THREE.Camera | null;
     main5: THREE.Camera | null;
-    in1: THREE.Camera | null;
-    in2: THREE.Camera | null;
-    out1: THREE.Camera | null;
-    out2: THREE.Camera | null;
+    capturePlate: THREE.Camera | null;
   };
   collisionMeshes: THREE.Mesh[];
   hdriTexture: THREE.DataTexture | null;
@@ -45,7 +42,7 @@ export interface SensorOccupancy {
   occupied: boolean;
   carIndex: number | null;
   plateNumber: string | null;
-  plateCamera: "in1" | "in2" | null;
+  plateCamera: "capturePlate" | null;
   distance: number;
 }
 

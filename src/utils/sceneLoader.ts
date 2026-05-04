@@ -9,6 +9,7 @@ import {
 
 const loader = new GLTFLoader();
 const PLATE_PATTERN = /\bRAB\d{3}\b/i;
+const CAPTURE_PLATE_CAMERA_ZOOM = 1.0;
 
 async function loadGLB(
   path: string,
@@ -205,11 +206,29 @@ export async function loadAllAssets(
     main3: pickCamera(gltfCams, "main_camera_3",  "main3", "MainCamera3"),
     main4: pickCamera(gltfCams, "main_camera_4",  "main4", "MainCamera4"),
     main5: pickCamera(gltfCams, "main_camera_5",  "main5", "MainCamera5"),
-    in1:   pickCamera(gltfCams, "camera_in_1",    "in_1",  "in1"),
-    in2:   pickCamera(gltfCams, "camera_in_2",    "in_2",  "in2"),
-    out1:  pickCamera(gltfCams, "camera_out_1",   "out_1", "out1"),
-    out2:  pickCamera(gltfCams, "camera_out_2",   "out_2", "out2"),
+    capturePlate: null as THREE.Camera | null,
   };
+
+  const capturePlateGLTF = await loadGLB("/models/capture_plate_camera.glb");
+  const capturePlateRoot = capturePlateGLTF.scene;
+  capturePlateRoot.name = "capture_plate_camera";
+  debugNames(capturePlateRoot, "capture_plate_camera.glb");
+  capturePlateRoot.traverse((obj) => {
+    if ((obj as THREE.Mesh).isMesh) {
+      const mesh = obj as THREE.Mesh;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+    }
+  });
+  const capturePlateCams = capturePlateGLTF.cameras;
+  cameras.capturePlate =
+    pickCamera(
+      capturePlateCams,
+      "capture_plate_camera",
+      "capture_plate",
+      "plate_camera",
+      "camera",
+    ) ?? capturePlateCams[0] ?? null;
 
   console.log("[SceneLoader] Resolved cameras:", {
     main:  cameras.main?.name  ?? "❌ MISSING",
@@ -217,21 +236,31 @@ export async function loadAllAssets(
     main3: cameras.main3?.name ?? "❌ MISSING (optional)",
     main4: cameras.main4?.name ?? "❌ MISSING (optional)",
     main5: cameras.main5?.name ?? "❌ MISSING (optional)",
-    in1:   cameras.in1?.name   ?? "❌ MISSING",
-    in2:   cameras.in2?.name   ?? "❌ MISSING",
-    out1:  cameras.out1?.name  ?? "❌ MISSING",
-    out2:  cameras.out2?.name  ?? "❌ MISSING",
+    capturePlate: cameras.capturePlate?.name ?? "❌ MISSING",
   });
 
-  (["main", "in1", "in2", "out1", "out2"] as const).forEach((key) => {
+  (["main", "capturePlate"] as const).forEach((key) => {
     if (!cameras[key]) {
       console.warn(
-        `[SceneLoader] Camera "${key}" is MISSING. Available: ${gltfCams.map((c) => c.name).join(", ")}`,
+        `[SceneLoader] Camera "${key}" is MISSING. Available: ${[
+          ...gltfCams,
+          ...capturePlateCams,
+        ].map((c) => c.name).join(", ")}`,
       );
     }
   });
 
   camRoot.updateWorldMatrix(true, true);
+  capturePlateRoot.updateWorldMatrix(true, true);
+  environment.add(capturePlateRoot);
+  if (cameras.capturePlate) {
+    cameras.capturePlate.updateMatrixWorld(true);
+    if ((cameras.capturePlate as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const pcam = cameras.capturePlate as THREE.PerspectiveCamera;
+      pcam.zoom = CAPTURE_PLATE_CAMERA_ZOOM;
+      pcam.updateProjectionMatrix();
+    }
+  }
 
   // ── Sensors ───────────────────────────────────────────────────────────────
   report("Loading sensors…", 22);

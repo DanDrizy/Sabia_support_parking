@@ -20,7 +20,7 @@ import { SensorPanel } from "./SensorPanel";
 interface SceneViewerProps {
   assets: SceneAssets;
 }
-const BOTTOM_H = 160;
+const BOTTOM_H = 330;
 
 // All possible main camera keys in display order
 const ALL_MAIN_CAMS: MainCamKey[] = [
@@ -43,10 +43,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mainViewRef = useRef<HTMLDivElement>(null);
   const subRef0 = useRef<HTMLDivElement>(null);
-  const subRef1 = useRef<HTMLDivElement>(null);
-  const subRef2 = useRef<HTMLDivElement>(null);
-  const subRef3 = useRef<HTMLDivElement>(null);
-  const subViewRefs = [subRef0, subRef1, subRef2, subRef3];
+  const subViewRefs = [subRef0];
 
   // ── Active main camera ────────────────────────────────────────────────────
   const [activeCam, setActiveCam] = useState<MainCamKey>("main");
@@ -287,7 +284,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
           top: 0,
           left: 0,
           right: 0,
-          bottom: BOTTOM_H,
+          bottom: 0,
           border: "1px solid rgba(0,212,255,0.12)",
           pointerEvents: "auto",
         }}
@@ -371,75 +368,31 @@ export function SceneViewer({ assets }: SceneViewerProps) {
           alignItems: "stretch",
           gap: "4px",
           padding: "4px",
-          background: "rgba(6,8,12,0.92)",
-          borderTop: "1px solid #1a2332",
+          background: "transparent",
+          borderTop: "none",
+          pointerEvents: "none",
         }}
       >
-        {/* cam_in_1 */}
         <div
           ref={subRef0}
           style={{
-            flex: 1,
+            flex: "0 0 auto",
             position: "relative",
             border: "1px solid rgba(26,35,50,0.9)",
             borderRadius: "3px",
             overflow: "hidden",
             minWidth: 0,
+            aspectRatio: "526 / 329",
+            height: "100%",
+            alignSelf: "stretch",
+            pointerEvents: "auto",
           }}
         >
-          <CameraLabel label="CAM / IN-1" isActive />
+          <CameraLabel label="CAPTURE PLATE CAM" isActive />
           <Vignette />
         </div>
 
-        {/* cam_in_2 */}
-        <div
-          ref={subRef1}
-          style={{
-            flex: 1,
-            position: "relative",
-            border: "1px solid rgba(26,35,50,0.9)",
-            borderRadius: "3px",
-            overflow: "hidden",
-            minWidth: 0,
-          }}
-        >
-          <CameraLabel label="CAM / IN-2" isActive />
-          <Vignette />
-        </div>
-
-        {/* cam_out_1 */}
-        <div
-          ref={subRef2}
-          style={{
-            flex: 1,
-            position: "relative",
-            border: "1px solid rgba(26,35,50,0.9)",
-            borderRadius: "3px",
-            overflow: "hidden",
-            minWidth: 0,
-          }}
-        >
-          <CameraLabel label="CAM / OUT-1" isActive />
-          <Vignette />
-        </div>
-
-        {/* cam_out_2 */}
-        <div
-          ref={subRef3}
-          style={{
-            flex: 1,
-            position: "relative",
-            border: "1px solid rgba(26,35,50,0.9)",
-            borderRadius: "3px",
-            overflow: "hidden",
-            minWidth: 0,
-          }}
-        >
-          <CameraLabel label="CAM / OUT-2" isActive />
-          <Vignette />
-        </div>
-
-        <div style={{ flexShrink: 0, width: "4px" }} />
+        <div style={{ flex: 1, minWidth: "4px" }} />
 
         {/* ── Playback controls ────────────────────────────────────────── */}
         <div
@@ -451,6 +404,7 @@ export function SceneViewer({ assets }: SceneViewerProps) {
             justifyContent: "center",
             gap: "10px",
             paddingRight: "8px",
+            pointerEvents: "auto",
           }}
         >
           {/* Speed slider */}

@@ -14,7 +14,7 @@ const PROXIMITY_RADIUS = 2.2;
 
 export interface PlateDetection {
   plateNumber: string;
-  camera: "in1" | "in2";
+  camera: "capturePlate";
 }
 
 export class SensorManager {

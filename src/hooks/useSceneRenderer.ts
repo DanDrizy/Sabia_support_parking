@@ -11,7 +11,6 @@ const BARRIER_ROTATION_SPEED = 7;
 const BARRIER_CLOSED_OFFSET = - Math.PI / 2;
 const SUB_CAMERA_EXPOSURE = 2.2;
 const SUB_CAMERA_FILL_INTENSITY = 2.8;
-type EntryCameraKey = "in1" | "in2";
 type PlateMemory = PlateDetection & { lastSeenMs: number };
 
 interface UseSceneRendererOptions {
@@ -76,23 +75,18 @@ function rememberEntryCameraPlates(
   memory: Map<number, PlateMemory>,
   nowMs: number,
 ) {
-  const entryCameras: Array<[EntryCameraKey, THREE.Camera | null]> = [
-    ["in1", assets.cameras.in1],
-    ["in2", assets.cameras.in2],
-  ];
+  const camera = assets.cameras.capturePlate;
+  if (!camera) return;
 
-  entryCameras.forEach(([cameraKey, camera]) => {
-    if (!camera) return;
-    assets.cars.forEach((car, index) => {
-      const plateObject = assets.carPlateMeshes[index] ?? car;
-      if (!objectIsSeenByCamera(plateObject, camera)) return;
-      const carIndex = index + 1;
-      memory.set(carIndex, {
-        plateNumber:
-          assets.carPlates[index] ?? `RAB${String(carIndex).padStart(3, "0")}`,
-        camera: cameraKey,
-        lastSeenMs: nowMs,
-      });
+  assets.cars.forEach((car, index) => {
+    const plateObject = assets.carPlateMeshes[index] ?? car;
+    if (!objectIsSeenByCamera(plateObject, camera)) return;
+    const carIndex = index + 1;
+    memory.set(carIndex, {
+      plateNumber:
+        assets.carPlates[index] ?? `RAB${String(carIndex).padStart(3, "0")}`,
+      camera: "capturePlate",
+      lastSeenMs: nowMs,
     });
   });
 }
@@ -170,10 +164,7 @@ export function useSceneRenderer({
     console.log("[useSceneRenderer] cameras:", {
       main: assets.cameras.main?.name ?? "MISSING",
       main2: assets.cameras.main2?.name ?? "not exported",
-      in1: assets.cameras.in1?.name ?? "MISSING",
-      in2: assets.cameras.in2?.name ?? "MISSING",
-      out1: assets.cameras.out1?.name ?? "MISSING",
-      out2: assets.cameras.out2?.name ?? "MISSING",
+      capturePlate: assets.cameras.capturePlate?.name ?? "MISSING",
     });
 
     // ── Renderer ─────────────────────────────────────────────────────────────
@@ -235,42 +226,20 @@ export function useSceneRenderer({
     );
 
     // ── BUILD FALLBACK CAMERAS for any missing sub-views ──────────────────────
-    // These give each sub-panel a unique angle so the feed is never black.
-    // Tweak positions/lookAt to suit your scene layout.
+    // Used only if capture_plate_camera.glb has no exported camera.
     const sceneCenter = new THREE.Vector3(0, 0, 0);
 
-    const resolvedIn1: THREE.Camera =
-      assets.cameras.in1 ??
-      makeFallbackCam(new THREE.Vector3(-8, 4, 12), sceneCenter, "in1");
-
-    const resolvedIn2: THREE.Camera =
-      assets.cameras.in2 ??
-      makeFallbackCam(new THREE.Vector3(8, 4, 12), sceneCenter, "in2");
-
-    const resolvedOut1: THREE.Camera =
-      assets.cameras.out1 ??
-      makeFallbackCam(new THREE.Vector3(-8, 4, -12), sceneCenter, "out1");
-
-    const resolvedOut2: THREE.Camera =
-      assets.cameras.out2 ??
-      makeFallbackCam(new THREE.Vector3(8, 4, -12), sceneCenter, "out2");
-
-    // Log which cameras fell back so it's easy to spot in dev tools
-    if (!assets.cameras.in1)
-      console.warn(
-        "[useSceneRenderer] in1 camera missing from GLB — using fallback position",
+    const resolvedCapturePlate: THREE.Camera =
+      assets.cameras.capturePlate ??
+      makeFallbackCam(
+        new THREE.Vector3(0, 4, 12),
+        sceneCenter,
+        "capture_plate",
       );
-    if (!assets.cameras.in2)
+
+    if (!assets.cameras.capturePlate)
       console.warn(
-        "[useSceneRenderer] in2 camera missing from GLB — using fallback position",
-      );
-    if (!assets.cameras.out1)
-      console.warn(
-        "[useSceneRenderer] out1 camera missing from GLB — using fallback position",
-      );
-    if (!assets.cameras.out2)
-      console.warn(
-        "[useSceneRenderer] out2 camera missing from GLB — using fallback position",
+        "[useSceneRenderer] capturePlate camera missing from GLB - using fallback position",
       );
 
     // ── Car sequencer ─────────────────────────────────────────────────────────
@@ -413,29 +382,8 @@ export function useSceneRenderer({
       // ── Render all viewports — resolved cams are NEVER null ───────────────
       renderViewport(getMainCamera(), mainViewRef.current, canvas);
       renderViewport(
-        resolvedIn1,
+        resolvedCapturePlate,
         subViewRefs[0].current,
-        canvas,
-        SUB_CAMERA_EXPOSURE,
-        true,
-      );
-      renderViewport(
-        resolvedIn2,
-        subViewRefs[1].current,
-        canvas,
-        SUB_CAMERA_EXPOSURE,
-        true,
-      );
-      renderViewport(
-        resolvedOut1,
-        subViewRefs[2].current,
-        canvas,
-        SUB_CAMERA_EXPOSURE,
-        true,
-      );
-      renderViewport(
-        resolvedOut2,
-        subViewRefs[3].current,
         canvas,
         SUB_CAMERA_EXPOSURE,
         true,

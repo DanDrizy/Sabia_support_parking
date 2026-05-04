@@ -83,6 +83,7 @@ export default function App() {
           {[
             "env.glb",
             "camera.glb",
+            "capture_plate_camera.glb",
             "car_1.glb",
             "car_2.glb",
             "car_3.glb",
@@ -90,6 +91,7 @@ export default function App() {
             "car_5.glb",
             "car_6.glb",
             "car_7.glb",
+            "car_8.glb",
           ].map((f) => (
             <div key={f} style={{ color: "#3d5068" }}>
               <span style={{ color: "#00d4ff" }}>public/models/</span>
